@@ -14,9 +14,33 @@ export async function getById(db: SupabaseClient, id: string): Promise<Block | n
   return data ? blockSchema.parse(data) : null;
 }
 
+/** Every live child of a block, in document order. Soft-deleted rows are gone. */
+export async function listChildren(
+  db: SupabaseClient,
+  parentId: string
+): Promise<Block[]> {
+  const { data, error } = await db
+    .from('blocks')
+    .select('*')
+    .eq('parent_id', parentId)
+    .is('deleted_at', null)
+    .order('position', { ascending: true });
+  if (error) throw new Error(`blocks.listChildren: ${error.message}`);
+  return (data ?? []).map((row) => blockSchema.parse(row));
+}
+
+/** A handful of blocks by id — the note list's titles. Soft-deleted included. */
+export async function listByIds(db: SupabaseClient, ids: string[]): Promise<Block[]> {
+  if (ids.length === 0) return [];
+  const { data, error } = await db.from('blocks').select('*').in('id', ids);
+  if (error) throw new Error(`blocks.listByIds: ${error.message}`);
+  return (data ?? []).map((row) => blockSchema.parse(row));
+}
+
 export async function insert(
   db: SupabaseClient,
   row: {
+    id?: string;
     workspace_id: string;
     parent_id: string | null;
     position: number;
@@ -36,6 +60,7 @@ export async function update(
   patch: {
     content: Record<string, unknown>;
     updated_at: string;
+    type?: string;
     version?: number;
     content_hash?: string;
   }
@@ -47,6 +72,38 @@ export async function update(
     .select('*')
     .single();
   if (error) throw new Error(`blocks.update: ${error.message}`);
+  return blockSchema.parse(data);
+}
+
+/**
+ * Position only. Reordering a document is not an edit to any of its
+ * paragraphs, so `version`, `content_hash` and `content` are untouched here —
+ * and because the version does not move, the staleness trigger does not fire.
+ */
+export async function updatePosition(
+  db: SupabaseClient,
+  id: string,
+  position: number
+): Promise<Block> {
+  const { data, error } = await db
+    .from('blocks')
+    .update({ position })
+    .eq('id', id)
+    .select('*')
+    .single();
+  if (error) throw new Error(`blocks.updatePosition: ${error.message}`);
+  return blockSchema.parse(data);
+}
+
+/** Soft delete: the row stays, because provenance outlives the paragraph. */
+export async function markDeleted(db: SupabaseClient, id: string): Promise<Block> {
+  const { data, error } = await db
+    .from('blocks')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', id)
+    .select('*')
+    .single();
+  if (error) throw new Error(`blocks.markDeleted: ${error.message}`);
   return blockSchema.parse(data);
 }
 

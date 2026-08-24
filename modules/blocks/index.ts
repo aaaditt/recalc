@@ -2,7 +2,11 @@
 export {
   createBlock,
   updateBlock,
+  moveBlock,
+  softDeleteBlock,
   getBlock,
+  getBlocks,
+  getChildBlocks,
   normalise,
   hashContent,
   plainTextOf,

@@ -1,9 +1,11 @@
 // One lecture, opened from the grid.
 //
-// docs/DESIGN.md says a class taps through to the lecture page. That page is
-// slice 05, so until it exists this sheet is what a tap opens: the same
-// header the lecture page will have — code, name, date, time, room, cancelled
-// state — plus the one-tap cancel this slice owes.
+// docs/DESIGN.md says a class taps through to the lecture page. Slice 05 built
+// that page, so this sheet is now the short way in: the header — code, name,
+// date, time, room, cancelled state — the one-tap cancel, and the link
+// through to where the lecture actually lives.
+
+import Link from 'next/link';
 
 import { Button } from '@/components/ui/button';
 import { Pill } from '@/components/ui/pill';
@@ -57,16 +59,24 @@ export function MeetingSheet({
         </dl>
 
         <div className="flex flex-col gap-2">
+          <Link
+            href={`/lecture/${meeting.id}`}
+            className="inline-flex h-(--control-height) items-center justify-center rounded-card bg-ink px-(--control-padding-x) text-14 font-medium text-bg transition-opacity duration-100 hover:opacity-90"
+          >
+            Open lecture
+          </Link>
+
           <Button
             disabled={busy}
             onClick={() => onSetCancelled(meeting.id, !meeting.cancelled)}
           >
             {meeting.cancelled ? 'Un-cancel this class' : 'Cancel this class'}
           </Button>
+
           <p className="text-12 text-muted">
-            A cancelled class stays on the calendar, struck through — knowing it is
-            cancelled is more useful than it vanishing. Notes and files arrive with the
-            lecture page in slice 05.
+            Notes, files and the syllabus topic live on the lecture page. A cancelled
+            class stays on the calendar, struck through — knowing it is cancelled is
+            more useful than it vanishing.
           </p>
         </div>
       </div>

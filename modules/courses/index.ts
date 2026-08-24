@@ -1,13 +1,17 @@
 // Public API of the courses module. Import only from here.
 export {
   getCourses,
+  getCourse,
   getSyllabusUnits,
   getMeeting,
   getMeetingsOnDate,
   getMeetingsBetween,
+  getMeetingsWithNotes,
   generateMeetings,
   rescheduleMeeting,
   setMeetingStatus,
+  setMeetingNote,
+  setMeetingUnit,
   createOneOffMeeting,
 } from './service';
 export {

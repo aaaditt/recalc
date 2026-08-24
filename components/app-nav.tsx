@@ -71,7 +71,7 @@ const DESTINATIONS: Destination[] = [
   {
     href: '/notes',
     label: 'Notes',
-    built: false,
+    built: true,
     // A page with writing on it.
     icon: (
       <Icon>

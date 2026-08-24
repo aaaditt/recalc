@@ -60,6 +60,35 @@ export async function listSyllabusUnits(
   return (data ?? []).map((row) => syllabusUnitSchema.parse(row));
 }
 
+/** One syllabus unit by id, or null. */
+export async function findSyllabusUnit(
+  db: SupabaseClient,
+  id: string
+): Promise<SyllabusUnit | null> {
+  const { data, error } = await db
+    .from('syllabus_units')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) throw new Error(`courses.findSyllabusUnit: ${error.message}`);
+  return data ? syllabusUnitSchema.parse(data) : null;
+}
+
+/** Every lecture that has a note document, most recent lecture first. */
+export async function listMeetingsWithNotes(
+  db: SupabaseClient,
+  workspaceId: string
+): Promise<ClassMeeting[]> {
+  const { data, error } = await db
+    .from('class_meetings')
+    .select('*')
+    .eq('workspace_id', workspaceId)
+    .not('note_block_id', 'is', null)
+    .order('starts_at', { ascending: false });
+  if (error) throw new Error(`courses.listMeetingsWithNotes: ${error.message}`);
+  return (data ?? []).map((row) => classMeetingSchema.parse(row));
+}
+
 /** Meetings starting inside the half-open instant range [startsAt, endsAt). */
 export async function listMeetingsBetween(
   db: SupabaseClient,
@@ -181,6 +210,38 @@ export async function updateMeetingTimes(
     .select('*')
     .single();
   if (error) throw new Error(`courses.updateMeetingTimes: ${error.message}`);
+  return classMeetingSchema.parse(data);
+}
+
+/** Point a lecture at its note document. Written once, on the first save. */
+export async function updateMeetingNoteBlock(
+  db: SupabaseClient,
+  id: string,
+  noteBlockId: string
+): Promise<ClassMeeting> {
+  const { data, error } = await db
+    .from('class_meetings')
+    .update({ note_block_id: noteBlockId })
+    .eq('id', id)
+    .select('*')
+    .single();
+  if (error) throw new Error(`courses.updateMeetingNoteBlock: ${error.message}`);
+  return classMeetingSchema.parse(data);
+}
+
+/** Which syllabus unit this lecture covered. Null clears it. */
+export async function updateMeetingUnit(
+  db: SupabaseClient,
+  id: string,
+  unitId: string | null
+): Promise<ClassMeeting> {
+  const { data, error } = await db
+    .from('class_meetings')
+    .update({ unit_id: unitId })
+    .eq('id', id)
+    .select('*')
+    .single();
+  if (error) throw new Error(`courses.updateMeetingUnit: ${error.message}`);
   return classMeetingSchema.parse(data);
 }
 

@@ -10,7 +10,7 @@ column as you go — this is how a fresh session knows where we are.
 | 02 | Design system — tokens, fonts, course colours, primitives | done |
 | 03 | Today — the daily page | done |
 | 04 | **Calendar** — week / day / month, meeting generation | done |
-| 05 | Notes + lecture pages — TipTap over blocks | not started |
+| 05 | Notes + lecture pages — TipTap over blocks | done |
 | 06 | Tasks — CRUD, linked to courses, units and lectures | not started |
 | 07 | Focus — Pomodoro logged against a syllabus unit | not started |
 | 08 | Syllabus — ordered units, status, progress | not started |

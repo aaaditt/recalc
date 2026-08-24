@@ -38,6 +38,15 @@ export async function getCourses(
   return repo.listCourses(db, workspaceId, term);
 }
 
+/** One course by id, or null when it is not this workspace's. */
+export async function getCourse(
+  db: SupabaseClient,
+  workspaceId: string,
+  id: string
+): Promise<Course | null> {
+  return repo.findCourse(db, workspaceId, id);
+}
+
 export async function getSyllabusUnits(
   db: SupabaseClient,
   courseId: string
@@ -75,6 +84,14 @@ export async function getMeeting(
   id: string
 ): Promise<ClassMeeting | null> {
   return repo.findMeeting(db, workspaceId, id);
+}
+
+/** Every lecture that has a note document, most recent lecture first. */
+export async function getMeetingsWithNotes(
+  db: SupabaseClient,
+  workspaceId: string
+): Promise<ClassMeeting[]> {
+  return repo.listMeetingsWithNotes(db, workspaceId);
 }
 
 // ---------------------------------------------------------------------------
@@ -133,6 +150,52 @@ export async function setMeetingStatus(
   const meeting = await repo.findMeeting(db, workspaceId, id);
   if (!meeting) throw new Error(`setMeetingStatus: no meeting ${id} in this workspace`);
   return repo.updateMeetingStatus(db, id, meetingStatusSchema.parse(status));
+}
+
+/**
+ * Attach a note document to a lecture. Written once — the first time anything
+ * is typed into that lecture's note — and never changed after, because a
+ * lecture has exactly one note and it is the one already on screen.
+ *
+ * Setting it also makes the meeting hand-edited (see `isHandEdited`), so
+ * regenerating the term can never move or duplicate a lecture that has notes.
+ */
+export async function setMeetingNote(
+  db: SupabaseClient,
+  workspaceId: string,
+  id: string,
+  noteBlockId: string
+): Promise<ClassMeeting> {
+  const meeting = await repo.findMeeting(db, workspaceId, id);
+  if (!meeting) throw new Error(`setMeetingNote: no meeting ${id} in this workspace`);
+  if (meeting.note_block_id) return meeting;
+  return repo.updateMeetingNoteBlock(db, id, noteBlockId);
+}
+
+/**
+ * One tap on the lecture page: which syllabus unit this lecture covered.
+ *
+ * This is the link the study analytics are built on — minutes and questions
+ * per unit only mean anything once lectures name their unit — so it is worth
+ * the extra read that keeps a unit from another course out.
+ */
+export async function setMeetingUnit(
+  db: SupabaseClient,
+  workspaceId: string,
+  id: string,
+  unitId: string | null
+): Promise<ClassMeeting> {
+  const meeting = await repo.findMeeting(db, workspaceId, id);
+  if (!meeting) throw new Error(`setMeetingUnit: no meeting ${id} in this workspace`);
+
+  if (unitId !== null) {
+    const unit = await repo.findSyllabusUnit(db, unitId);
+    if (!unit || unit.course_id !== meeting.course_id) {
+      throw new Error('setMeetingUnit: that unit belongs to a different course');
+    }
+  }
+
+  return repo.updateMeetingUnit(db, id, unitId);
 }
 
 /**

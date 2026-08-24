@@ -298,6 +298,94 @@
     font-family: var(--font-serif);
   }
 
+  /* --------------------------------------------------------------------------
+     The note document — slice 05.
+
+     TipTap renders a plain contenteditable, so its elements need styling
+     somewhere. It goes here rather than in the editor component because rule 7
+     says a component may not carry a raw value, and every number below is a
+     token: the type scale from DESIGN.md and the 4px spacing scale.
+     -------------------------------------------------------------------------- */
+  .note-doc {
+    font-size: var(--text-16);
+    line-height: 1.7;
+    outline: none;
+    padding-block: 16px;
+    /* Somewhere to put the cursor below the last paragraph. */
+    min-block-size: 40vh;
+  }
+
+  .note-doc > * + * {
+    margin-block-start: 12px;
+  }
+
+  .note-doc h2 {
+    font-family: var(--font-sans);
+    font-size: var(--text-20);
+    font-weight: 600;
+    line-height: 1.3;
+    margin-block-start: 24px;
+  }
+
+  .note-doc h3 {
+    font-family: var(--font-sans);
+    font-size: var(--text-16);
+    font-weight: 600;
+    line-height: 1.4;
+    margin-block-start: 24px;
+  }
+
+  .note-doc ul,
+  .note-doc ol {
+    padding-inline-start: 24px;
+  }
+
+  .note-doc ul {
+    list-style: disc;
+  }
+
+  .note-doc ol {
+    list-style: decimal;
+  }
+
+  .note-doc li::marker {
+    color: var(--text-faint);
+  }
+
+  .note-doc code {
+    font-family: var(--font-mono);
+    font-size: var(--text-14);
+    background-color: var(--sunken);
+    border-radius: var(--radius-block);
+    padding-inline: 4px;
+  }
+
+  .note-doc pre {
+    font-family: var(--font-mono);
+    font-size: var(--text-13);
+    background-color: var(--sunken);
+    border-radius: var(--radius-card);
+    padding: 12px;
+    overflow-x: auto;
+  }
+
+  .note-doc pre code {
+    background-color: transparent;
+    padding: 0;
+    font-size: inherit;
+  }
+
+  .note-doc hr {
+    border: 0;
+    border-block-start: 1px solid var(--border);
+    margin-block: 24px;
+  }
+
+  /* The drop cursor and gap cursor TipTap draws while dragging. */
+  .note-doc .ProseMirror-gapcursor::after {
+    border-block-start-color: var(--text);
+  }
+
   @media (prefers-reduced-motion: reduce) {
     *,
     *::before,

@@ -517,6 +517,65 @@ nothing to install. `--week-hour-height` and the rest of DESIGN.md's calendar
 measurements went into `app/globals.css` beside the other tokens, because rule
 7 says a component may not carry a raw value.
 
+## 2026-08-24 — `plainTextOf` walks the TipTap document instead of stringifying it
+Because: the staleness invariant hashes a block's *meaning*, not its markup.
+Walking the node tree and concatenating only `text` nodes (inline children run
+together, block children get a line break between them) means bold, italic,
+code marks and a heading-level change never touch the hash — only the words
+do. Stringifying the JSON instead would make every formatting keystroke look
+like a rewrite and stale every derivation downstream for nothing. The plain
+`{ text: string }` shape every earlier slice writes is still read as-is, so
+slice 05 does not touch a single existing block. Proven by
+`modules/recalc/tiptap-staleness.test.ts` against the real cascade trigger:
+reordering nodes and bolding a word stale nothing; changing a word bumps the
+version and stales the derivation, exactly as `staleness.test.ts` already
+proved for plain blocks.
+Instead of: hashing the TipTap JSON directly, which is simpler but wrong — see
+above — or building a rich-document differ before slice 05 needed one.
+
+## 2026-08-24 — A note document is one `blocks` row of type `note`; its paragraphs are its children
+Because: blocks are already the single primitive with identity, versioning and
+provenance (see the first decision in this file) — a note is not a new kind of
+thing, it is TipTap's document shape spread across the parent/child structure
+`modules/blocks` already has. Each top-level TipTap node becomes one child
+block, so a derivation can cite the paragraph it read rather than the whole
+document, and reordering paragraphs is a position change with no version bump
+(`modules/blocks/document.test.ts`).
+Instead of: one block holding the entire TipTap document as opaque JSON, which
+would make every keystroke anywhere in the document bump the same version and
+make per-paragraph provenance impossible.
+
+## 2026-08-24 — `standalone_notes` indexes free-standing notes only; a lecture note is found through `class_meetings.note_block_id`
+Because: there are two kinds of note and each already has an authoritative
+place to be found — a lecture note through the meeting it belongs to, a
+free-standing note (a formula sheet, a reading plan) through nothing, which is
+exactly what migration 003 adds. Indexing lecture notes a second time here
+would create two sources that could disagree about the same document.
+Instead of: one `notes` table for both kinds, which needs a nullable
+`meeting_id` and a rule about which field wins when both are set.
+
+## 2026-08-24 — Dependencies added in slice 05
+Because (rule 10, one line each):
+`@tiptap/react` — the stack's named editor, React bindings.
+`@tiptap/starter-kit` — the paragraph/heading/list/mark set DESIGN.md's note
+screens need, as one bundle instead of assembling each extension by hand.
+`@tiptap/pm` — ProseMirror types `@tiptap/react`'s API is built on; needed to
+type the document JSON this slice hashes and stores.
+Instead of: nothing controversial; TipTap/ProseMirror is named in CLAUDE.md's
+stack table.
+
+## 2026-08-24 — `createStandaloneNote` verifies `courseId` against the caller's workspace before inserting
+Because: `workspaceId` is derived server-side from the session on every call,
+but `courseId` is client-supplied form data, and the `standalone_notes` insert
+policy only validates `workspace_id` — not the `course_id` it references. The
+same gap was found and fixed in slice 04's `createOneOffMeeting` (see the
+security-fix commit between slices 04 and 05); this slice repeats the same
+shape, so it gets the same check: a `getCourse(workspaceId, courseId)` lookup
+before the row is written, mirroring `setMeetingUnit`'s existing cross-course
+check for syllabus units.
+Instead of: relying on RLS alone, which is a correct backstop for `workspace_id`
+but was never asked to prove `course_id` belongs to that workspace too.
+
 ---
 
 ## Noticed, not fixed

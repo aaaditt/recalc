@@ -18,10 +18,60 @@ import {
 export const normalise = (s: string) =>
   s.normalize('NFKC').replace(/\s+/g, ' ').trim();
 
-// The text a block's meaning is judged by. Today content is { text: string };
-// when richer shapes arrive (slice 05) this walks the document instead.
+// ---------------------------------------------------------------------------
+// Plain text
+//
+// The text a block's meaning is judged by. Two shapes reach here:
+//
+//   { text: string }  — a plain block: a note document's title, a task, and
+//                       everything written before slice 05.
+//   a TipTap node     — one top-level node of a note document, stored verbatim
+//                       as ProseMirror JSON.
+//
+// A TipTap node is walked rather than stringified, and only its text is taken.
+// That is the whole reason bold, italic, code and a change of heading level do
+// not bump a version: marks and attributes are not text. Stringifying the JSON
+// instead would make applying bold look exactly like rewriting the sentence,
+// and every derivation downstream would go stale for a formatting change.
+// ---------------------------------------------------------------------------
+
+type NodeLike = { type: string; text?: unknown; content?: unknown };
+
+function isNodeLike(value: unknown): value is NodeLike {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as { type?: unknown }).type === 'string'
+  );
+}
+
+function textOfNode(node: unknown): string {
+  if (!isNodeLike(node)) return '';
+  if (node.type === 'text') return typeof node.text === 'string' ? node.text : '';
+  if (node.type === 'hardBreak') return '\n';
+
+  const children = Array.isArray(node.content) ? node.content : [];
+  let text = '';
+
+  for (const child of children) {
+    const childType = isNodeLike(child) ? child.type : '';
+    // Inline children run together, so bolding half a sentence leaves the
+    // sentence unchanged. Block children get a break between them, so two list
+    // items never merge into one word.
+    text +=
+      childType === 'text' || childType === 'hardBreak'
+        ? textOfNode(child)
+        : `\n${textOfNode(child)}`;
+  }
+
+  return text;
+}
+
 export function plainTextOf(content: BlockContent): string {
+  if (typeof content.type === 'string') return textOfNode(content);
   if (typeof content.text === 'string') return content.text;
+  // An unknown shape. Stable enough to hash, and loudly wrong if one ever
+  // appears, which is what we want.
   return JSON.stringify(content);
 }
 
@@ -58,6 +108,7 @@ export async function createBlock(
     parsed.position ?? (await repo.maxPosition(db, parsed.workspaceId, parentId)) + 1;
 
   return repo.insert(db, {
+    id: parsed.id,
     workspace_id: parsed.workspaceId,
     parent_id: parentId,
     position,
@@ -80,6 +131,7 @@ export async function updateBlock(
   const patch: Parameters<typeof repo.update>[2] = {
     content: parsed.content,
     updated_at: new Date().toISOString(),
+    ...(parsed.type ? { type: parsed.type } : {}),
   };
 
   // The invariant: version bumps ONLY when the normalised content hash changed.
@@ -92,6 +144,40 @@ export async function updateBlock(
   return repo.update(db, id, patch);
 }
 
+/**
+ * Move a block among its siblings. Position only — no version bump, no hash,
+ * no cascade. Reordering the paragraphs of a note changes none of them, and
+ * the test for that is modules/blocks/document.test.ts.
+ */
+export async function moveBlock(
+  db: SupabaseClient,
+  id: string,
+  position: number
+): Promise<Block> {
+  return repo.updatePosition(db, id, position);
+}
+
+/**
+ * Delete a node from a document. Soft, always: a derivation may name this
+ * block, and destroying the row would destroy the provenance with it.
+ */
+export async function softDeleteBlock(db: SupabaseClient, id: string): Promise<Block> {
+  return repo.markDeleted(db, id);
+}
+
 export async function getBlock(db: SupabaseClient, id: string): Promise<Block | null> {
   return repo.getById(db, id);
+}
+
+/** A block's live children in document order — a note document's nodes. */
+export async function getChildBlocks(
+  db: SupabaseClient,
+  parentId: string
+): Promise<Block[]> {
+  return repo.listChildren(db, parentId);
+}
+
+/** Several blocks by id, in no particular order. */
+export async function getBlocks(db: SupabaseClient, ids: string[]): Promise<Block[]> {
+  return repo.listByIds(db, ids);
 }

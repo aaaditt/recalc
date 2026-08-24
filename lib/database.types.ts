@@ -349,6 +349,62 @@ export type Database = {
           },
         ]
       }
+      standalone_notes: {
+        Row: {
+          block_id: string
+          course_id: string | null
+          created_at: string
+          id: string
+          unit_id: string | null
+          workspace_id: string
+        }
+        Insert: {
+          block_id: string
+          course_id?: string | null
+          created_at?: string
+          id?: string
+          unit_id?: string | null
+          workspace_id: string
+        }
+        Update: {
+          block_id?: string
+          course_id?: string | null
+          created_at?: string
+          id?: string
+          unit_id?: string | null
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "standalone_notes_block_id_fkey"
+            columns: ["block_id"]
+            isOneToOne: false
+            referencedRelation: "blocks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "standalone_notes_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "standalone_notes_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "syllabus_units"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "standalone_notes_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       syllabus_units: {
         Row: {
           block_id: string | null
