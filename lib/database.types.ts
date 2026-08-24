@@ -96,6 +96,131 @@ export type Database = {
           },
         ]
       }
+      class_meetings: {
+        Row: {
+          course_id: string
+          created_at: string
+          ends_at: string
+          id: string
+          note_block_id: string | null
+          room: string | null
+          session_id: string | null
+          starts_at: string
+          status: string
+          topic: string | null
+          unit_id: string | null
+          workspace_id: string
+        }
+        Insert: {
+          course_id: string
+          created_at?: string
+          ends_at: string
+          id?: string
+          note_block_id?: string | null
+          room?: string | null
+          session_id?: string | null
+          starts_at: string
+          status?: string
+          topic?: string | null
+          unit_id?: string | null
+          workspace_id: string
+        }
+        Update: {
+          course_id?: string
+          created_at?: string
+          ends_at?: string
+          id?: string
+          note_block_id?: string | null
+          room?: string | null
+          session_id?: string | null
+          starts_at?: string
+          status?: string
+          topic?: string | null
+          unit_id?: string | null
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "class_meetings_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "class_meetings_note_block_id_fkey"
+            columns: ["note_block_id"]
+            isOneToOne: false
+            referencedRelation: "blocks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "class_meetings_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "class_meetings_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "syllabus_units"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "class_meetings_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      courses: {
+        Row: {
+          code: string
+          colour: string | null
+          created_at: string
+          credits: number | null
+          id: string
+          instructor: string | null
+          name: string
+          term: string
+          workspace_id: string
+        }
+        Insert: {
+          code: string
+          colour?: string | null
+          created_at?: string
+          credits?: number | null
+          id?: string
+          instructor?: string | null
+          name: string
+          term: string
+          workspace_id: string
+        }
+        Update: {
+          code?: string
+          colour?: string | null
+          created_at?: string
+          credits?: number | null
+          id?: string
+          instructor?: string | null
+          name?: string
+          term?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "courses_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       derivation_sources: {
         Row: {
           derivation_id: string
@@ -173,6 +298,179 @@ export type Database = {
           },
           {
             foreignKeyName: "derivations_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sessions: {
+        Row: {
+          course_id: string
+          created_at: string
+          ends_at: string
+          id: string
+          room: string | null
+          starts_at: string
+          valid_from: string | null
+          valid_until: string | null
+          weekday: number
+        }
+        Insert: {
+          course_id: string
+          created_at?: string
+          ends_at: string
+          id?: string
+          room?: string | null
+          starts_at: string
+          valid_from?: string | null
+          valid_until?: string | null
+          weekday: number
+        }
+        Update: {
+          course_id?: string
+          created_at?: string
+          ends_at?: string
+          id?: string
+          room?: string | null
+          starts_at?: string
+          valid_from?: string | null
+          valid_until?: string | null
+          weekday?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sessions_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      syllabus_units: {
+        Row: {
+          block_id: string | null
+          course_id: string
+          created_at: string
+          id: string
+          position: number
+          status: string
+          title: string
+        }
+        Insert: {
+          block_id?: string | null
+          course_id: string
+          created_at?: string
+          id?: string
+          position: number
+          status?: string
+          title: string
+        }
+        Update: {
+          block_id?: string | null
+          course_id?: string
+          created_at?: string
+          id?: string
+          position?: number
+          status?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "syllabus_units_block_id_fkey"
+            columns: ["block_id"]
+            isOneToOne: false
+            referencedRelation: "blocks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "syllabus_units_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tasks: {
+        Row: {
+          course_id: string | null
+          created_at: string
+          due_at: string | null
+          effort_min: number | null
+          id: string
+          meeting_id: string | null
+          notes: string | null
+          source_block_id: string | null
+          status: string
+          title: string
+          unit_id: string | null
+          updated_at: string
+          workspace_id: string
+        }
+        Insert: {
+          course_id?: string | null
+          created_at?: string
+          due_at?: string | null
+          effort_min?: number | null
+          id?: string
+          meeting_id?: string | null
+          notes?: string | null
+          source_block_id?: string | null
+          status?: string
+          title: string
+          unit_id?: string | null
+          updated_at?: string
+          workspace_id: string
+        }
+        Update: {
+          course_id?: string | null
+          created_at?: string
+          due_at?: string | null
+          effort_min?: number | null
+          id?: string
+          meeting_id?: string | null
+          notes?: string | null
+          source_block_id?: string | null
+          status?: string
+          title?: string
+          unit_id?: string | null
+          updated_at?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tasks_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_meeting_id_fkey"
+            columns: ["meeting_id"]
+            isOneToOne: false
+            referencedRelation: "class_meetings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_source_block_id_fkey"
+            columns: ["source_block_id"]
+            isOneToOne: false
+            referencedRelation: "blocks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "syllabus_units"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_workspace_id_fkey"
             columns: ["workspace_id"]
             isOneToOne: false
             referencedRelation: "workspaces"

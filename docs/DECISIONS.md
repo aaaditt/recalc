@@ -128,14 +128,106 @@ Because (rule 10, one line each):
 Instead of: nothing controversial; all are named in CLAUDE.md's stack table except
 `server-only`, which exists purely to enforce Never rule 4.
 
+## 2026-08-24 — Migration history repaired through the Supabase MCP, not the CLI
+Because: 001 was applied by pasting into the SQL editor, so
+`supabase_migrations.schema_migrations` did not exist at all. `migration repair`
+needs an interactive database-password prompt this machine cannot answer. 002 was
+applied with `apply_migration`, which created the history table, and its recorded
+version was then rewritten to `002` and a `001`/`foundation` row inserted, so the
+history now matches the filenames exactly. `npm run db:push` is usable again.
+Instead of: `db push`, which would have re-applied 001 and failed on "table
+already exists".
+
+## 2026-08-24 — Wall-clock times in `sessions`, instants in `class_meetings`
+Because: a printed timetable says "Tuesdays at 09:00" with no timezone. Storing
+`sessions.starts_at` as a `time` keeps it honest; `class_meetings.starts_at` is a
+`timestamptz` because a lecture happened at one exact moment. The timezone is
+applied exactly once, in `generateMeetings`.
+Instead of: a timezone column on `courses`, or storing meeting times naively and
+letting whatever TZ the process runs under decide (dev laptop, vitest and Vercel
+are three different answers).
+
+## 2026-08-24 — Timezone is an explicit argument, defaulting to the machine's zone
+Because: every read that crosses the wall-clock/instant boundary takes a
+`timeZone`. The default is `Intl.DateTimeFormat().resolvedOptions().timeZone`,
+which is right for a single user on their own laptop; tests and the seed script
+pass it explicitly so they are reproducible anywhere.
+Instead of: hardcoding `Asia/Dubai`, which is a fact about this term, not about
+the code.
+
+## 2026-08-24 — A meeting's identity is (session_id, local date), not (session_id, instant)
+Because: correcting a session from 09:00 to 10:00 must *move* that Tuesday's
+lecture, not add a second one beside it. Keying on the instant would duplicate
+every meeting whose time was ever fixed. The unique index on
+`(session_id, starts_at)` stays as a database-level backstop against duplicates.
+Instead of: matching on the exact timestamp, which is only idempotent while the
+timetable is never corrected.
+
+## 2026-08-24 — "Hand-edited" is what `generateMeetings` refuses to touch
+Because: SCHEMA.md forbids regenerating over a lecture that has notes or files.
+A meeting counts as hand-edited when `note_block_id`, `topic` or `unit_id` is set,
+or `status` is not `scheduled`; those are never modified again. An untouched
+meeting has its time and room refreshed from the pattern, so fixing a typo'd room
+and re-running works. `files` is not checked yet — the table lands in slice 09,
+and a file is always attached from a lecture page that also writes
+`note_block_id`. Add the check when the files module exists.
+Instead of: insert-if-missing only (a corrected timetable would never propagate),
+or a blanket overwrite (which is the mistake the schema doc warns about).
+
+## 2026-08-24 — Migration 002 adds four guards SCHEMA.md does not spell out
+Because: the seeding path for this slice is a human typing rows into the Supabase
+table editor. `sessions.weekday between 0 and 6`, `ends_at > starts_at` on both
+`sessions` and `class_meetings`, and a unique `(workspace_id, code, term)` on
+`courses` each turn a plausible typo into an immediate error instead of a wrong
+calendar in November. `unit_id` and `note_block_id` also got `on delete set null`,
+which SCHEMA.md leaves unstated — without it, deleting a syllabus unit fails.
+Instead of: bare columns matching the doc byte-for-byte and finding the mistakes
+by reading the calendar.
+
+## 2026-08-24 — `tasks.status` is `open | doing | done | dropped`
+Because: SCHEMA.md names the column but not its values. `doing` is what makes a
+task list honest at 11pm, and `dropped` keeps a cancelled task's provenance
+instead of deleting it. It is a text column with a zod enum in front, so slice 06
+can change the set cheaply if the UI wants something else.
+Instead of: guessing a two-state `open | done` and discovering in slice 06 that
+"started but not finished" had nowhere to go.
+
+## 2026-08-24 — `lib/time.ts` holds the timezone maths, not a module
+Because: courses and tasks both convert local days to instant ranges, and so does
+`scripts/seed-check.ts`. It is a pure shared util with no database access, which
+is exactly what `/lib` is for. It has its own test because offset arithmetic is
+where this slice would fail silently.
+Instead of: duplicating the Intl offset dance in two modules, or inventing a
+`modules/time` that owns no table.
+
+## 2026-08-24 — `scripts/seed-check.ts` builds its own Supabase client
+Because: `lib/supabase/admin.ts` imports `server-only`, whose default export
+throws outside a React Server Component — so a plain `tsx` script cannot use it.
+The script creates a service-role client directly, the same way the tests do.
+Instead of: relaxing the `server-only` guard, which exists to enforce Never rule 4.
+
+## 2026-08-24 — Dependency added in slice 01
+Because (rule 10): `tsx` (dev) — runs `scripts/seed-check.ts` as TypeScript with
+the `@/` path alias resolved; the slice spec names `npx tsx` as the command, and
+pinning it locally means it is not re-downloaded on every run.
+
 ---
 
 ## Noticed, not fixed
 
 Things spotted outside the current slice. Do not fix them mid-slice; write them here.
 
-- Migration 001 was applied by pasting it into the Supabase SQL editor, so the CLI's
-  migration history table does not record it. Before slice 01's `npm run db:push`,
-  run `npx supabase migration repair --status applied 001` once in a normal terminal
-  (it prompts for the database password). Otherwise push will try to re-apply 001
-  and fail on "table already exists".
+- ~~Migration 001 was applied by pasting it into the Supabase SQL editor, so the
+  CLI's migration history table does not record it.~~ **Fixed in slice 01** — see
+  the decision above. History now holds `001`/`foundation` and `002`/`semester`,
+  matching the two files. `npm run db:push` and `npm run db:types` both work.
+- Supabase's security advisor reports one project-level warning:
+  **leaked password protection is disabled** (Auth → Providers → Password). It is
+  a dashboard setting, not schema, and unrelated to this slice's tables. Worth
+  ticking on before the app is public.
+- `vitest.config.ts` triggers a Vite warning: "ESM syntax in a file loaded as
+  CommonJS". Harmless today; fixed by adding `"type": "module"` to `package.json`
+  or renaming the config to `.mts`. Left alone — it touches the whole project's
+  module resolution and belongs in its own change.
+- `docs/SCHEMA.md` lists `study_sessions` under the semester layer. It is not in
+  slice 01's build list, so it was not created. Slice 07 (Focus) needs it.

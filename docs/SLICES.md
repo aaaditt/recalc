@@ -6,7 +6,7 @@ column as you go — this is how a fresh session knows where we are.
 | # | Slice | Status |
 |---|---|---|
 | 00 | Foundation — Next.js, Supabase, auth, blocks + engine tables | done |
-| 01 | Semester data — courses, sessions, meetings, units, tasks (no UI) | not started |
+| 01 | Semester data — courses, sessions, meetings, units, tasks (no UI) | done |
 | 02 | Design system — tokens, fonts, course colours, primitives | not started |
 | 03 | Today — the daily page | not started |
 | 04 | **Calendar** — week / day / month, meeting generation | not started |
