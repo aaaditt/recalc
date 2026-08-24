@@ -16,6 +16,10 @@ import StarterKit from '@tiptap/starter-kit';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { BlockId } from '@/components/notes/block-id';
+import {
+  TaskFromSelection,
+  type SelectionTask,
+} from '@/components/tasks/task-from-selection';
 import { cx } from '@/lib/cx';
 
 /** Long enough to type a sentence through, short enough to feel saved. */
@@ -37,10 +41,25 @@ type NoteEditorProps = {
   nodes: unknown[];
   /** Returns the document's id, which is how a first save names a new note. */
   save: (docId: string | null, nodes: unknown[]) => Promise<{ docId: string }>;
+  /**
+   * Turn the selected sentence into a task. Omit it and the button is not
+   * drawn — the editor still knows nothing about courses or lectures; it hands
+   * back the words and the id of the block they are in, and the page it is on
+   * fills in the rest.
+   */
+  makeTask?: (input: {
+    title: string;
+    sourceBlockId: string | null;
+    dueAt: string | null;
+  }) => Promise<void>;
 };
 
-export function NoteEditor({ docId, nodes, save }: NoteEditorProps) {
+export function NoteEditor({ docId, nodes, save, makeTask }: NoteEditorProps) {
   const [status, setStatus] = useState<Status>('clean');
+  // Non-empty while there is text selected, so the "Task" button knows whether
+  // it has anything to work on.
+  const [selected, setSelected] = useState('');
+  const [selection, setSelection] = useState<SelectionTask | null>(null);
 
   const docIdRef = useRef(docId);
 
@@ -119,7 +138,36 @@ export function NoteEditor({ docId, nodes, save }: NoteEditorProps) {
     onBlur: () => {
       if (pending.current) schedule(0);
     },
+    onSelectionUpdate: ({ editor: current }) => {
+      const { from, to } = current.state.selection;
+      setSelected(from === to ? '' : current.state.doc.textBetween(from, to, ' '));
+    },
   });
+
+  /**
+   * Open the sheet for whatever is selected.
+   *
+   * The pending save is flushed first, on purpose: a task made from a sentence
+   * typed thirty seconds ago names a block that only exists once that save has
+   * landed. Waiting for it is the difference between the link resolving and the
+   * write being rejected.
+   */
+  const openTaskSheet = useCallback(async () => {
+    if (!editor) return;
+
+    const text = selected.trim();
+    if (text === '') return;
+
+    if (pending.current) await flush();
+
+    const { state } = editor;
+    const at = state.doc.resolve(state.selection.from);
+    // depth 1 is the top-level node — the one that is a `blocks` row.
+    const top = at.depth > 0 ? at.node(1) : null;
+    const blockId = typeof top?.attrs?.blockId === 'string' ? top.attrs.blockId : null;
+
+    setSelection({ title: text, blockId });
+  }, [editor, flush, selected]);
 
   // Leaving the page — closing the tab, switching apps on a phone, or simply
   // navigating away — is the last chance to write what is still pending.
@@ -140,6 +188,16 @@ export function NoteEditor({ docId, nodes, save }: NoteEditorProps) {
     <div className="flex flex-col">
       <div className="sticky top-0 z-10 flex items-center gap-1 border-b border-line bg-bg py-2">
         <Toolbar editor={editor} />
+
+        {makeTask ? (
+          <ToolButton
+            label="＋ Task"
+            title="Make a task from the selection"
+            disabled={selected.trim() === ''}
+            onClick={() => void openTaskSheet()}
+          />
+        ) : null}
+
         <span
           aria-live="polite"
           className={cx(
@@ -152,6 +210,14 @@ export function NoteEditor({ docId, nodes, save }: NoteEditorProps) {
       </div>
 
       <EditorContent editor={editor} />
+
+      {makeTask ? (
+        <TaskFromSelection
+          selection={selection}
+          onClose={() => setSelection(null)}
+          create={makeTask}
+        />
+      ) : null}
     </div>
   );
 }
@@ -165,17 +231,20 @@ function ToolButton({
   title,
   onClick,
   mono,
+  disabled,
 }: {
   label: string;
   title: string;
   onClick: () => void;
   mono?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       title={title}
       aria-label={title}
+      disabled={disabled}
       // The editor keeps the selection: pressing a toolbar button must not
       // take focus out of the document first.
       onMouseDown={(event) => event.preventDefault()}
@@ -183,6 +252,7 @@ function ToolButton({
       className={cx(
         'flex h-(--control-height) min-w-(--control-height) items-center justify-center rounded-card px-2',
         'text-13 text-muted transition-colors duration-100 hover:bg-sunken hover:text-ink',
+        'disabled:pointer-events-none disabled:opacity-40',
         mono && 'font-mono'
       )}
     >

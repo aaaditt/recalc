@@ -31,6 +31,7 @@ import {
   type NoteDocument,
   type NoteListEntry,
   type NoteNode,
+  type NoteRef,
   type StandaloneNote,
 } from './schema';
 
@@ -178,6 +179,74 @@ export async function listNotes(
   }
 
   return entries.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+}
+
+/**
+ * Where these blocks live, keyed by the block id that was asked about.
+ *
+ * This is the other half of a task's `source_block_id`: the task names a
+ * paragraph, and this says which note that paragraph is in and where to find
+ * it on screen. Blocks that are not part of a note — or not this workspace's —
+ * are simply absent from the map.
+ *
+ * Batched because /tasks asks it once for the whole list rather than once per
+ * task.
+ */
+export async function getNoteRefs(
+  db: SupabaseClient,
+  workspaceId: string,
+  blockIds: string[]
+): Promise<Map<string, NoteRef>> {
+  const refs = new Map<string, NoteRef>();
+  const wanted = [...new Set(blockIds)];
+  if (wanted.length === 0) return refs;
+
+  const blocks = (await getBlocks(db, wanted)).filter(
+    (block) => block.workspace_id === workspaceId
+  );
+  if (blocks.length === 0) return refs;
+
+  // A selection sits in a paragraph, which is a child of the note document. A
+  // task made from the document itself names the document.
+  const docIdOf = new Map(blocks.map((block) => [block.id, block.parent_id ?? block.id]));
+  const docs = await getBlocks(db, [...new Set(docIdOf.values())]);
+  const docById = new Map(
+    docs.filter((doc) => doc.type === 'note' && doc.deleted_at === null).map((d) => [d.id, d])
+  );
+
+  const [meetings, standalone] = await Promise.all([
+    getMeetingsWithNotes(db, workspaceId),
+    repo.listStandalone(db, workspaceId),
+  ]);
+
+  const meetingOfDoc = new Map<string, string>();
+  for (const meeting of meetings) {
+    if (meeting.note_block_id) meetingOfDoc.set(meeting.note_block_id, meeting.id);
+  }
+  const standaloneDocs = new Set(standalone.map((note) => note.block_id));
+
+  for (const [blockId, docId] of docIdOf) {
+    const doc = docById.get(docId);
+    if (!doc) continue;
+
+    const meetingId = meetingOfDoc.get(docId) ?? null;
+    // A lecture note is read on its lecture page, where the date and room are.
+    // Anything else opens as a bare document — including a note that is in
+    // neither index yet, which is still openable at /notes/<id>.
+    if (meetingId === null && !standaloneDocs.has(docId)) {
+      refs.set(blockId, { docId, title: titleOf(doc), meetingId: null, href: `/notes/${docId}` });
+      continue;
+    }
+
+    refs.set(blockId, {
+      docId,
+      title: titleOf(doc),
+      meetingId,
+      href: meetingId ? `/lecture/${meetingId}` : `/notes/${docId}`,
+    });
+  }
+
+  return refs;
 }
 
 // ---------------------------------------------------------------------------

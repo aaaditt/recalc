@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
-import { saveNoteAction } from '../actions';
+import { addNoteTaskAction, saveNoteAction } from '../actions';
 import { NoteEditor } from '@/components/notes/note-editor';
 import { colourForCourse, courseDot } from '@/lib/course-colours';
 import { createClient } from '@/lib/supabase/server';
@@ -62,7 +62,17 @@ export default async function NotePage({
         </h1>
       </header>
 
-      <NoteEditor docId={note.id} nodes={note.nodes} save={saveNoteAction} />
+      <NoteEditor
+        docId={note.id}
+        nodes={note.nodes}
+        save={saveNoteAction}
+        makeTask={addNoteTaskAction.bind(null, note.id)}
+      />
+
+      <p className="pt-2 text-12 text-muted">
+        Select a sentence and press <span className="font-mono">＋ Task</span> to turn it
+        into a deadline that remembers where it came from.
+      </p>
     </>
   );
 }

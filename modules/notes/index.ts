@@ -1,6 +1,7 @@
 // Public API of the notes module. Import only from here.
 export {
   getNoteDocument,
+  getNoteRefs,
   getStandaloneNote,
   listNotes,
   ensureLectureNote,
@@ -15,6 +16,7 @@ export {
   type NoteNode,
   type NoteDocument,
   type NoteListEntry,
+  type NoteRef,
   type StandaloneNote,
   type CreateStandaloneNoteInput,
   type SaveNoteInput,

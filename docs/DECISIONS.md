@@ -576,6 +576,133 @@ check for syllabus units.
 Instead of: relying on RLS alone, which is a correct backstop for `workspace_id`
 but was never asked to prove `course_id` belongs to that workspace too.
 
+## 2026-08-24 — Every client-supplied id in `modules/tasks` is proved before it is written
+Because: this is the third slice in a row where a write takes a foreign id from
+the browser, and the first two both shipped the bug (`createOneOffMeeting` in
+04, `createStandaloneNote` in 05 — see the entries above). A task takes four at
+once: `courseId`, `unitId`, `meetingId` and `sourceBlockId`. So the check is not
+repeated per call site — one `checkLinks` in `tasks.service` runs on `createTask`
+*and* `updateTask`, proves the course is this workspace's, the lecture is this
+workspace's *and* belongs to that course, the unit belongs to that course, and
+the source block is this workspace's. A caller cannot forget it because no
+caller performs it. `modules/tasks/task-sources.test.ts` asserts all six refusals
+against the real database with the service-role key, which bypasses RLS — so the
+test proves the *service* refuses, not merely that Postgres would have.
+Instead of: a check per server action (four actions, four chances to forget), or
+relying on RLS, which is a correct backstop for `workspace_id` and was never
+asked to prove anything about the ids that row points at.
+
+## 2026-08-24 — `getOverdueTasks` has no lookback window, and /today now uses it
+Because: docs/DECISIONS.md capped /today's overdue section at 30 days purely
+because the tasks module could only answer "due between these two dates". It can
+answer the real question now — `status in (open, doing) and due_at < now` — so
+the workaround is gone. The page makes two reads instead of one, because they
+are two different questions: a seven-day window forwards, and everything late
+backwards. The essay from April shows up again, which is the point.
+Instead of: keeping the window (a screen that quietly loses things), or widening
+it to a year (the same bug with a bigger number).
+
+## 2026-08-24 — A task is deleted for real, unlike a block
+Because: nothing is ever derived *from* a task, so there is no provenance for a
+tombstone to protect — which is the whole reason `softDeleteBlock` exists.
+`dropped` remains the status for "decided not to do this" and keeps its history;
+delete is for a task that was never real. The sheet says exactly that.
+Instead of: soft-deleting tasks too, which would mean every read carrying a
+`deleted_at is null` filter to hide rows nothing will ever cite.
+
+## 2026-08-24 — Filters on /tasks are links, not client state
+Because: a filter is a fact about which page you are looking at. As `?f=` and
+`?c=` it survives a refresh, can be bookmarked, back works, and the whole screen
+stays a Server Component — no JavaScript at all is needed to change what is
+shown. The list is fetched once and narrowed by `filterTasks` in `lib/tasks.ts`,
+which is a pure function with tests, exactly as `/today` and `/calendar` keep
+their arithmetic out of the components.
+Instead of: `useState` over a client-side list (a screen that forgets what you
+were looking at every time you complete something), or a server round trip per
+row, which is what a per-filter query would have been anyway.
+
+## 2026-08-24 — The shorthand parser reads only the *end* of the line, and never the whole of it
+Because: the failure mode of quick add is eating half a title. So it consumes at
+most one date and one time, only as a suffix, only when at least one word would
+be left over ("friday" alone is a task called "friday"), and it refuses a bare
+number outright — "Read chapter 5" must not become "Read chapter" due at 05:00.
+Short joining words directly in front of a recognised date are dropped, because
+"hand in the essay by friday" is how a person types. What it understood is
+rendered under the box before anything is saved, per the slice's own
+instruction, and `lib/task-shorthand.test.ts` has a whole describe block named
+for what it refuses to invent.
+Instead of: a date library and a permissive grammar, which would parse more and
+be trusted less — and would need a dependency (rule 10) to be wrong in more ways.
+
+## 2026-08-24 — Parsing happens in the browser, and the resulting instant is sent to the server
+Because: "fri 5pm" means five in the evening where the person typing it is
+standing. Parsing in the browser is the only place that fact is known for free,
+and it makes the preview instant. The server receives an ISO instant and never
+re-interprets it. The edit sheet's date and time fields are the one exception —
+they post `YYYY-MM-DD` and `HH:MM` and are combined server-side, so they follow
+`TZ` like every other date on these screens (see the Vercel `TZ` decision above).
+Instead of: posting the raw string and parsing it on the server, which would put
+the deadline in Vercel's timezone, or shipping a timezone in the payload, which
+is a second source of truth about the same thing.
+
+## 2026-08-24 — "Make a task from this" flushes the note's pending save first
+Because: the editor mints a block id the moment a paragraph is typed, but the
+`blocks` row only exists after the debounced save lands ~900ms later. A task made
+from a sentence typed five seconds ago would otherwise name an id that is not in
+the database yet, and `checkLinks` would — correctly — refuse it. Awaiting the
+flush before opening the sheet is the difference between the link resolving and
+the write being rejected for a reason the user cannot see.
+Instead of: skipping the ownership check for source blocks (which is the bug
+this slice exists not to repeat), or creating the block eagerly on every
+keystroke.
+
+## 2026-08-24 — `NoteEditor` takes an optional `makeTask` callback and still knows nothing about tasks
+Because: the editor's contract from slice 05 is that it holds no knowledge of
+lectures, courses or the database. Selection-to-task keeps that: the editor
+hands back the selected words and the id of the block they sit in, and the page
+underneath fills in the course, the unit and the lecture — server-side, from the
+row it just read, so those three are not client-supplied at all. Omit the prop
+and the button is not drawn.
+Instead of: passing course lists into the editor (which would make it know about
+courses), or wrapping it in a second client component just to own a sheet.
+
+## 2026-08-24 — `getNoteRefs` lives in `modules/notes`, not `modules/tasks`
+Because: "where does this block live, and what is the URL" is a question about
+notes. The notes module already holds both halves of the answer — a lecture note
+is found through `class_meetings.note_block_id`, a free-standing one through
+`standalone_notes` — and duplicating that resolution inside tasks would create a
+second place that can disagree about the same document. It is batched (one call
+per page, not one per row) because /tasks asks it for a whole list.
+Instead of: `modules/tasks` importing `modules/notes` to build a href, which
+inverts which module owns the fact.
+
+## 2026-08-24 — `Input` / `Textarea` / `Select` / `Field` land in `/components/ui`, and three screens stop styling inputs inline
+Because: docs/DECISIONS.md's "Noticed, not fixed" booked this for slice 06 by
+name — the first slice with a real form. The add-a-one-off sheet,
+`/settings/semester` and `/notes` each carried their own copy of the same
+`FIELD` string; all three now import the primitive, and `/styleguide` shows it
+beside the others. The controls share `--control-height` with `Button`, so a
+form and its submit button line up and both grow to 44px on a touch screen.
+Instead of: a fourth copy of the string in this slice's four new forms.
+
+## 2026-08-24 — The mobile bottom nav goes to five columns
+Because: /tasks is a top-level destination and has to be reachable. An earlier
+note in this file said a fifth entry "would break" the four-column grid; at
+390px five columns is 78px each, which comfortably fits a 20px icon above a
+one-word label. Measured rather than assumed. A *sixth* would not fit, so
+`/settings/*` still stays out of the nav — that note stands.
+Instead of: replacing the unbuilt "Review" entry (it is slice 11 and its route
+already exists), or leaving /tasks reachable only by typing the URL.
+
+## 2026-08-24 — No migration and no dependencies in slice 06
+Because: `tasks` already has every column this slice needs — slice 01 built it
+with `course_id`, `unit_id`, `meeting_id`, `due_at`, `status` and
+`source_block_id`, and RLS was enabled with four policies at the same time. The
+one measurement the screens needed that DESIGN.md does not specify,
+`--check-size`, went into `app/globals.css` beside the other tokens, because
+rule 7 says a component may not carry a raw value. Nothing was installed: the
+shorthand parser is regexes over tokens rather than a date library.
+
 ---
 
 ## Noticed, not fixed
@@ -612,10 +739,12 @@ Things spotted outside the current slice. Do not fix them mid-slice; write them 
   remember `TZ` alongside the two `NEXT_PUBLIC_SUPABASE_*` vars and
   `SUPABASE_SERVICE_ROLE_KEY`, and add the deployed origin to Supabase's
   Auth → URL Configuration redirect list or the magic link will bounce.
-- `modules/tasks` can answer "due between these two dates" and nothing else,
-  so /today's overdue section is capped at a 30-day lookback (see the decision
-  above). Slice 06 owns tasks and should add a real "everything still open and
-  past due" read; /today can then drop the window.
+- ~~`modules/tasks` can answer "due between these two dates" and nothing else,
+  so /today's overdue section is capped at a 30-day lookback. Slice 06 owns
+  tasks and should add a real "everything still open and past due" read;
+  /today can then drop the window.~~ **Fixed in slice 06** — `getOverdueTasks`
+  is that read, /today makes two calls instead of one, and
+  `OVERDUE_LOOKBACK_DAYS` is gone from `lib/today.ts`.
 - The Next.js dev-tools bubble sits on top of the first item in the mobile
   bottom nav at 390px. Development only — it is not in the production bundle —
   but it makes the nav awkward to click while developing on a narrow window.
@@ -630,12 +759,11 @@ Things spotted outside the current slice. Do not fix them mid-slice; write them 
   group so it gets no shell, and it is the only screen that renders before
   auth, so it wants a pass at some point. Slice 03 deliberately left it alone
   (rule 9).
-- There is no `Input` / `Textarea` primitive. Nothing in slices 00–02 has a form
-  worth styling; slice 06 (Tasks) is the first that does, and it should add them
-  to `/components/ui` and to `/styleguide` rather than styling inputs inline.
-  **Slice 04 now has two forms styling inputs inline** — the add-a-one-off sheet
-  and `/settings/semester` — each with the same local `FIELD` string. Slice 06
-  should add the primitive and replace both.
+- ~~There is no `Input` / `Textarea` primitive... slice 06 should add the
+  primitive and replace both.~~ **Fixed in slice 06** — `components/ui/field.tsx`
+  holds `Input`, `Textarea`, `Select` and `Field`; the add-a-one-off sheet,
+  `/settings/semester` and `/notes` all use them, no `FIELD` string is left in
+  the tree, and `/styleguide` has a "Form controls" section.
 - `docs/DESIGN.md` contradicts itself on the accent, too. Neutrals says the
   accent appears "in exactly two places: something needs attention, and the
   now-line"; Measurements then asks for "a 4px accent dot under any day with
@@ -653,5 +781,33 @@ Things spotted outside the current slice. Do not fix them mid-slice; write them 
   a scrolling grid would be nicer and is a self-contained change; it was not in
   the slice.
 - `modules/courses` has no way to delete a meeting. A one-off added by mistake
-  can be cancelled but not removed. Slice 06 or a later calendar pass should
-  add it; it needs a confirmation step, which is why it was not slipped in here.
+  can be cancelled but not removed. A later calendar pass should add it; it
+  needs a confirmation step, which is why it was not slipped in here. Slice 06
+  did not do it either — it is a calendar change, not a tasks one, and
+  `deleteTask` gave no reason to reopen `modules/courses`.
+- Deleting a task on /tasks has no confirmation step. It is one tap inside a
+  sheet that has to be opened first, and the copy beside it points at `dropped`
+  as the non-destructive option, so it is hard to hit by accident — but a
+  mis-tap is unrecoverable. Worth a confirm the next time these screens are
+  touched.
+- `getNoteRefs` resolves a lecture note by listing every meeting that has a note
+  and filtering in memory. Correct, and fine at one student's scale, but it is a
+  full read for what should be one indexed lookup. Adding
+  `findMeetingByNoteBlock` to `modules/courses` would fix it; that is a change
+  to another module and was not this slice's (rule 9).
+- The quick-add parser understands English weekday and month names only, and
+  reads `28/8` as day-first. Both are facts about this user, not about the code.
+  If the app ever has a second user, they belong in a setting.
+- `/tasks` fetches every task in the workspace on each render and narrows it in
+  memory. That is the right trade at a few hundred rows — one query, instant
+  filter switching — and the wrong one at ten thousand. The repo already has the
+  indexes to push filters into SQL when that day comes.
+- Completing a task from /today or a lecture page re-renders the whole page
+  (`revalidatePath`). It is fast and needs no JavaScript, but the row does not
+  tick until the round trip returns. An optimistic client row would feel better
+  and would cost a `'use client'` on something that currently does not need one.
+- `components/today/task-row.tsx` and `components/tasks/task-item.tsx` are now
+  two rows that look nearly the same. They differ in what they show (one is a
+  seven-day view with no edit affordance) and merging them would mean one
+  component with several "is it this screen" props, so they were left apart.
+  Worth revisiting if a third task row ever appears.

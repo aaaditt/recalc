@@ -4,6 +4,7 @@ import { createStandaloneNoteAction } from './actions';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Field, Input, Select } from '@/components/ui/field';
 import { PageHeader } from '@/components/ui/page-header';
 import { colourForCourse, courseDot, type CourseColour } from '@/lib/course-colours';
 import { createClient } from '@/lib/supabase/server';
@@ -20,10 +21,6 @@ import { ensureWorkspace } from '@/modules/workspaces';
 // opens where that note lives.
 
 export const metadata = { title: 'Notes · Recalc' };
-
-const FIELD =
-  'h-(--control-height) w-full rounded-card border border-border bg-surface px-3 text-14 text-ink';
-const LABEL = 'font-mono text-label text-faint uppercase';
 
 type CourseLook = { code: string; name: string; colour: CourseColour };
 
@@ -152,32 +149,28 @@ export default async function NotesPage() {
               action={createStandaloneNoteAction}
               className="flex flex-col gap-4 px-4 py-4"
             >
-              <label className="flex flex-col gap-1">
-                <span className={LABEL}>Title</span>
-                <input
+              <Field label="Title">
+                <Input
                   name="title"
                   required
                   maxLength={120}
                   placeholder="Formula sheet"
-                  className={FIELD}
                 />
-              </label>
+              </Field>
 
               <div className="flex flex-col gap-4 sm:flex-row">
-                <label className="flex min-w-0 flex-1 flex-col gap-1">
-                  <span className={LABEL}>Course</span>
-                  <select name="courseId" required className={FIELD}>
+                <Field label="Course" className="flex-1">
+                  <Select name="courseId" required>
                     {courses.map((course) => (
                       <option key={course.id} value={course.id}>
                         {course.code} · {course.name}
                       </option>
                     ))}
-                  </select>
-                </label>
+                  </Select>
+                </Field>
 
-                <label className="flex min-w-0 flex-1 flex-col gap-1">
-                  <span className={LABEL}>Unit (optional)</span>
-                  <select name="unitId" defaultValue="" className={FIELD}>
+                <Field label="Unit (optional)" className="flex-1">
+                  <Select name="unitId" defaultValue="">
                     <option value="">No unit</option>
                     {courses.map((course) => {
                       const units = unitsByCourse.get(course.id) ?? [];
@@ -192,8 +185,8 @@ export default async function NotesPage() {
                         </optgroup>
                       );
                     })}
-                  </select>
-                </label>
+                  </Select>
+                </Field>
               </div>
 
               <Button type="submit" variant="primary">

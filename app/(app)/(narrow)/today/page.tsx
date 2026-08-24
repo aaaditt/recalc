@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 
+import { toggleTaskDoneAction } from '../tasks/actions';
 import { ClassRow } from '@/components/today/class-row';
 import { TaskRow } from '@/components/today/task-row';
 import { Card, CardDivider } from '@/components/ui/card';
@@ -16,7 +17,6 @@ import {
 } from '@/lib/time';
 import {
   DUE_WINDOW_DAYS,
-  OVERDUE_LOOKBACK_DAYS,
   classStates,
   formatDate,
   formatDayLabel,
@@ -24,7 +24,7 @@ import {
   groupTasksByDay,
 } from '@/lib/today';
 import { getCourses, getMeetingsOnDate } from '@/modules/courses';
-import { getTasksDueBetween, type Task } from '@/modules/tasks';
+import { getOverdueTasks, getTasksDueBetween, type Task } from '@/modules/tasks';
 import { ensureWorkspace } from '@/modules/workspaces';
 
 // The page opened at 7:45am. Read-only, server-rendered, no spinners: by the
@@ -75,11 +75,13 @@ function DueList({
         return (
           <TaskRow
             key={task.id}
+            id={task.id}
             title={task.title}
             code={code}
             colour={colour}
             due={due}
             overdue={overdue}
+            toggle={toggleTaskDoneAction}
           />
         );
       })}
@@ -106,17 +108,31 @@ export default async function TodayPage() {
   const today = todayIn(zone);
   const now = new Date();
 
-  const [courses, meetings, dueTasks] = await Promise.all([
+  // Two reads, because they are two questions. "What is due in the next week"
+  // is a window; "what is still open and already late" has no window at all —
+  // a deadline from March is still a deadline. Until slice 06 the tasks module
+  // could only answer the first, and this page faked the second with a 30-day
+  // lookback. It does not any more.
+  const [courses, meetings, dueTasks, overdueTasks] = await Promise.all([
     getCourses(supabase, workspace.id),
     getMeetingsOnDate(supabase, workspace.id, today, zone),
     getTasksDueBetween(
       supabase,
       workspace.id,
-      shiftDate(today, -OVERDUE_LOOKBACK_DAYS),
+      today,
       shiftDate(today, DUE_WINDOW_DAYS - 1),
       zone
     ),
+    getOverdueTasks(supabase, workspace.id, now),
   ]);
+
+  // A task due at 08:00 on a morning it is now 10:00 is in both lists.
+  const seen = new Set<string>();
+  const allTasks = [...overdueTasks, ...dueTasks].filter((task) => {
+    if (seen.has(task.id)) return false;
+    seen.add(task.id);
+    return true;
+  });
 
   // Courses come back ordered by code, so the fallback colour a course without
   // one gets is stable between renders.
@@ -130,7 +146,7 @@ export default async function TodayPage() {
   });
 
   const states = classStates(meetings, now);
-  const due = groupTasksByDay(dueTasks, { now, today, timeZone: zone });
+  const due = groupTasksByDay(allTasks, { now, today, timeZone: zone });
   const hasDeadlines = due.overdue.length > 0 || due.days.length > 0;
 
   // groupTasksByDay has already dropped anything undated, so due_at is a

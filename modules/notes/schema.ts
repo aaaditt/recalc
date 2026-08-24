@@ -57,6 +57,24 @@ export type NoteDocument = {
   nodes: NoteNode[];
 };
 
+/**
+ * Where a block lives, for anything holding a `source_block_id`.
+ *
+ * A task made by selecting a sentence in a note stores the id of that
+ * paragraph's block; this is how it finds its way back to the page the
+ * sentence is on.
+ */
+export type NoteRef = {
+  /** The note document the block belongs to — itself, or its parent. */
+  docId: string;
+  /** A free-standing note's title; empty for a lecture note. */
+  title: string;
+  /** Set when the note belongs to a dated lecture. */
+  meetingId: string | null;
+  /** `/lecture/<id>` or `/notes/<id>`. */
+  href: string;
+};
+
 /** One line in /notes. Lecture notes and free-standing notes both land here. */
 export type NoteListEntry = {
   blockId: string;

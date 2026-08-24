@@ -4,6 +4,7 @@ import { generateMeetingsAction } from './actions';
 import { Button } from '@/components/ui/button';
 import { Card, CardDivider } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Field, Input, Select } from '@/components/ui/field';
 import { PageHeader } from '@/components/ui/page-header';
 import { Pill } from '@/components/ui/pill';
 import { courseDot, colourForCourse } from '@/lib/course-colours';
@@ -16,10 +17,6 @@ import { ensureWorkspace } from '@/modules/workspaces';
 // test in slice 01.
 
 export const metadata = { title: 'Semester · Recalc' };
-
-const FIELD =
-  'h-(--control-height) w-full rounded-card border border-border bg-surface px-3 text-14 text-ink';
-const LABEL = 'font-mono text-label text-faint uppercase';
 
 export default async function SemesterPage({
   searchParams,
@@ -100,40 +97,25 @@ export default async function SemesterPage({
 
         <form action={generateMeetingsAction} className="flex flex-col gap-4 px-4 py-4">
           <div className="flex flex-col gap-4 sm:flex-row">
-            <label className="flex min-w-0 flex-1 flex-col gap-1">
-              <span className={LABEL}>Term starts</span>
-              <input
-                type="date"
-                name="termStart"
-                required
-                defaultValue={params.termStart}
-                className={FIELD}
-              />
-            </label>
-            <label className="flex min-w-0 flex-1 flex-col gap-1">
-              <span className={LABEL}>Term ends</span>
-              <input
-                type="date"
-                name="termEnd"
-                required
-                defaultValue={params.termEnd}
-                className={FIELD}
-              />
-            </label>
+            <Field label="Term starts" className="flex-1">
+              <Input type="date" name="termStart" required defaultValue={params.termStart} />
+            </Field>
+            <Field label="Term ends" className="flex-1">
+              <Input type="date" name="termEnd" required defaultValue={params.termEnd} />
+            </Field>
           </div>
 
           {terms.length > 1 ? (
-            <label className="flex flex-col gap-1">
-              <span className={LABEL}>Term</span>
-              <select name="term" defaultValue="" className={FIELD}>
+            <Field label="Term">
+              <Select name="term" defaultValue="">
                 <option value="">Every course</option>
                 {terms.map((term) => (
                   <option key={term} value={term}>
                     {term}
                   </option>
                 ))}
-              </select>
-            </label>
+              </Select>
+            </Field>
           ) : null}
 
           <Button type="submit" variant="primary" disabled={courses.length === 0}>

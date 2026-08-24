@@ -95,6 +95,12 @@
   --strip-selected-size: 34px;
   --strip-dot-size: 4px;
 
+  /* Tasks — slice 06. docs/DESIGN.md gives no number for a checkbox, so this
+     is the one measurement here that was chosen rather than quoted: 18px is
+     the largest circle that sits on the baseline of 14px text without pushing
+     the row taller than the 44px tap target it lives inside. */
+  --check-size: 18px;
+
   /* Today's column: docs/DESIGN.md asks for rgba(194,96,12,.035) — the light
      accent at 3.5%, "barely there, on purpose". Written as a mix so the
      channels stay in the one place they are allowed to be, and so the dark

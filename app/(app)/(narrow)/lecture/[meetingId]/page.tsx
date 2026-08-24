@@ -2,17 +2,25 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import type { ReactNode } from 'react';
 
-import { saveLectureNoteAction, setLectureUnitAction } from './actions';
+import {
+  addLectureTaskAction,
+  saveLectureNoteAction,
+  setLectureUnitAction,
+} from './actions';
+import { toggleTaskDoneAction } from '../../tasks/actions';
 import { NoteEditor } from '@/components/notes/note-editor';
+import { TaskItem } from '@/components/tasks/task-item';
 import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Pill } from '@/components/ui/pill';
 import { dayTitle, timeRange } from '@/lib/calendar';
 import { colourForCourse, courseDot } from '@/lib/course-colours';
 import { createClient } from '@/lib/supabase/server';
-import { localDateKey, localTimeZone } from '@/lib/time';
+import { dueLabel, isOverdue } from '@/lib/tasks';
+import { localDateKey, localTimeZone, todayIn } from '@/lib/time';
 import { getCourses, getMeeting, getSyllabusUnits } from '@/modules/courses';
 import { getNoteDocument } from '@/modules/notes';
+import { getTasksForMeeting } from '@/modules/tasks';
 import { ensureWorkspace } from '@/modules/workspaces';
 
 // One dated lecture — docs/DESIGN.md, "The lecture page".
@@ -55,12 +63,16 @@ export default async function LecturePage({
   const course = index === -1 ? null : courses[index];
   const colour = colourForCourse(course?.colour, Math.max(index, 0));
 
-  const [units, note] = await Promise.all([
+  const [units, note, tasks] = await Promise.all([
     course ? getSyllabusUnits(supabase, course.id) : Promise.resolve([]),
     meeting.note_block_id
       ? getNoteDocument(supabase, workspace.id, meeting.note_block_id)
       : Promise.resolve(null),
+    getTasksForMeeting(supabase, workspace.id, meeting.id),
   ]);
+
+  const today = todayIn(zone);
+  const now = new Date();
 
   const date = localDateKey(new Date(meeting.starts_at), zone);
   const when = timeRange(
@@ -107,7 +119,12 @@ export default async function LecturePage({
           docId={note?.id ?? null}
           nodes={note?.nodes ?? []}
           save={saveLectureNoteAction.bind(null, meeting.id)}
+          makeTask={addLectureTaskAction.bind(null, meeting.id)}
         />
+        <p className="pt-2 text-12 text-muted">
+          Select a sentence and press <span className="font-mono">＋ Task</span> to turn it
+          into a deadline that remembers where it came from.
+        </p>
       </Section>
 
       <Section label="Files">
@@ -129,11 +146,37 @@ export default async function LecturePage({
       </Section>
 
       <Section label="Tasks">
-        <Card>
-          <EmptyState
-            title="Nothing set in this lecture"
-            description="Homework and deadlines set here will hang off this lecture. Slice 06."
-          />
+        <Card className="overflow-hidden">
+          {tasks.length === 0 ? (
+            <EmptyState
+              title="Nothing set in this lecture"
+              description="Select a sentence in the note above and make a task from it, or add one on the tasks page."
+              action={
+                <Link
+                  href="/tasks"
+                  className="text-13 text-muted underline underline-offset-4 hover:text-ink"
+                >
+                  Go to tasks
+                </Link>
+              }
+            />
+          ) : (
+            <ul aria-label="Tasks set in this lecture" className="divide-y divide-line">
+              {tasks.map((task) => (
+                <TaskItem
+                  key={task.id}
+                  id={task.id}
+                  title={task.title}
+                  done={task.status === 'done' || task.status === 'dropped'}
+                  overdue={isOverdue(task, now)}
+                  code={course?.code ?? null}
+                  colour={colour}
+                  due={dueLabel(task.due_at, { today, timeZone: zone })}
+                  toggle={toggleTaskDoneAction}
+                />
+              ))}
+            </ul>
+          )}
         </Card>
       </Section>
 

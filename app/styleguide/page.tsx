@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Card, CardDivider } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Field, Input, Select, Textarea } from '@/components/ui/field';
 import { PageHeader } from '@/components/ui/page-header';
 import { Pill } from '@/components/ui/pill';
 import {
@@ -235,6 +236,43 @@ export default function StyleguidePage() {
           <Button variant="primary" disabled>
             Disabled
           </Button>
+        </Card>
+      </Section>
+
+      <Section title="Form controls">
+        <Card className="flex flex-col gap-4 p-4">
+          <Field label="Title" hint="A hint sits under the control, in --text-muted.">
+            <Input placeholder="Thermo problem set" />
+          </Field>
+
+          <div className="flex flex-col gap-4 sm:flex-row">
+            <Field label="Due date" className="flex-1">
+              <Input type="date" defaultValue="2026-10-14" />
+            </Field>
+            <Field label="Due time" className="flex-1">
+              <Input type="time" defaultValue="17:00" />
+            </Field>
+          </div>
+
+          <Field label="Course">
+            <Select defaultValue="ME301">
+              <option value="ME301">ME301 · Thermodynamics II</option>
+              <option value="MA204">MA204 · Linear Algebra</option>
+            </Select>
+          </Field>
+
+          <Field label="Notes">
+            <Textarea placeholder="Anything you would otherwise forget by Thursday." />
+          </Field>
+
+          <Field label="Disabled">
+            <Input disabled defaultValue="Not editable" />
+          </Field>
+
+          <p className="text-13 text-muted">
+            Same height, radius and hairline as a Button, so a form and its submit button
+            line up. On a touch screen they all grow to 44px together.
+          </p>
         </Card>
       </Section>
 

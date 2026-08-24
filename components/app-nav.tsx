@@ -1,7 +1,7 @@
 'use client';
 
 // The app's only chrome: a 216px sidebar on a laptop, a 62px bar at the bottom
-// of a phone. Both render the same four destinations, so there is one list to
+// of a phone. Both render the same five destinations, so there is one list to
 // keep honest.
 //
 // 'use client' for one reason: knowing which link is the current page.
@@ -65,6 +65,19 @@ const DESTINATIONS: Destination[] = [
       <Icon>
         <rect x="3" y="4" width="14" height="13" rx="2.5" />
         <path d="M3 8h14M8.5 8v9M13 8v9" />
+      </Icon>
+    ),
+  },
+  {
+    href: '/tasks',
+    label: 'Tasks',
+    built: true,
+    // A list with one thing ticked off.
+    icon: (
+      <Icon>
+        <path d="M8.5 5.5h8M8.5 10h8M8.5 14.5h5" />
+        <path d="M3 5.5 4.25 6.75 6.5 4.25" />
+        <path d="M3.25 10h2M3.25 14.5h2" />
       </Icon>
     ),
   },
@@ -141,11 +154,13 @@ export function AppNav() {
       </nav>
 
       {/* Phone. Fixed to the bottom, 62px, one hairline along the top, and
-          padded for the home indicator so the labels are not sitting on it. */}
+          padded for the home indicator so the labels are not sitting on it.
+          Five columns: at 390px that is 78px each, which fits a 20px icon and
+          a one-word label with room to spare. */}
       <nav
         aria-label="Sections"
         className={cx(
-          'fixed inset-x-0 bottom-0 z-40 grid grid-cols-4 border-t border-border bg-surface md:hidden',
+          'fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-border bg-surface md:hidden',
           'h-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom))] pb-[env(safe-area-inset-bottom)]'
         )}
       >

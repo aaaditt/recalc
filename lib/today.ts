@@ -10,13 +10,6 @@ import { localDateKey, shiftDate, type CalendarDate } from './time';
 /** How many days of deadlines /today shows, counting today. */
 export const DUE_WINDOW_DAYS = 7;
 
-/**
- * How far back /today looks for something already late. A task older than this
- * is not forgotten — it is simply not this screen's job, and a Today page that
- * opens onto four months of guilt is a Today page that stops being opened.
- */
-export const OVERDUE_LOOKBACK_DAYS = 30;
-
 // ---------------------------------------------------------------------------
 // Classes
 // ---------------------------------------------------------------------------
