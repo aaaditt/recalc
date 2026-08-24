@@ -147,6 +147,15 @@ export async function createOneOffMeeting(
   const parsed = createOneOffMeetingInputSchema.parse(input);
   const timeZone = parsed.timeZone ?? localTimeZone();
 
+  // courseId is client-supplied. workspaceId is not (every caller derives it
+  // from the session), but without this check a forged courseId could attach
+  // a meeting to a course this workspace does not own — RLS on class_meetings
+  // only validates workspace_id, not the course_id it references.
+  const course = await repo.findCourse(db, parsed.workspaceId, parsed.courseId);
+  if (!course) {
+    throw new Error(`createOneOffMeeting: no course ${parsed.courseId} in this workspace`);
+  }
+
   const startsAt = zonedToUtc(parsed.date, parsed.startsAt, timeZone);
   const endsAt = zonedToUtc(parsed.date, parsed.endsAt, timeZone);
   if (endsAt.getTime() <= startsAt.getTime()) {

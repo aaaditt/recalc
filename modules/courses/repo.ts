@@ -97,6 +97,22 @@ export async function listMeetingsForSessions(
   return (data ?? []).map((row) => classMeetingSchema.parse(row));
 }
 
+/** One course by id, or null when it is not this workspace's. */
+export async function findCourse(
+  db: SupabaseClient,
+  workspaceId: string,
+  id: string
+): Promise<Course | null> {
+  const { data, error } = await db
+    .from('courses')
+    .select('*')
+    .eq('workspace_id', workspaceId)
+    .eq('id', id)
+    .maybeSingle();
+  if (error) throw new Error(`courses.findCourse: ${error.message}`);
+  return data ? courseSchema.parse(data) : null;
+}
+
 /** One meeting by id, or null. Scoped by workspace so RLS is not the only guard. */
 export async function findMeeting(
   db: SupabaseClient,
