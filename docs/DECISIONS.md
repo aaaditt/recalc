@@ -134,4 +134,8 @@ Instead of: nothing controversial; all are named in CLAUDE.md's stack table exce
 
 Things spotted outside the current slice. Do not fix them mid-slice; write them here.
 
-- (nothing yet)
+- Migration 001 was applied by pasting it into the Supabase SQL editor, so the CLI's
+  migration history table does not record it. Before slice 01's `npm run db:push`,
+  run `npx supabase migration repair --status applied 001` once in a normal terminal
+  (it prompts for the database password). Otherwise push will try to re-apply 001
+  and fail on "table already exists".
