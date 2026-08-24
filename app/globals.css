@@ -46,6 +46,18 @@
   /* Sheet: a bottom sheet on mobile, a side panel from 640px up. */
   --sheet-width: 380px;
   --sheet-max-block: 85svh;
+
+  /* App shell — docs/DESIGN.md, "Chrome". Added in slice 03, the first slice
+     that draws the chrome. The top bar's 56px is not here yet: nothing has
+     needed one. */
+  --sidebar-width: 216px;
+  --sidebar-pad-block: 18px;
+  --sidebar-pad-inline: 12px;
+  --bottom-nav-height: 62px;
+
+  /* Room under scrolling content so its last row clears the bottom nav on a
+     phone, plus whatever the home indicator takes. */
+  --content-pad-bottom: calc(var(--bottom-nav-height) + 24px + env(safe-area-inset-bottom));
 }
 
 @media (pointer: coarse) {

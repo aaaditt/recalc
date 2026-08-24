@@ -38,6 +38,20 @@ export function isCourseColour(value: string | null | undefined): value is Cours
   return typeof value === 'string' && (COURSE_COLOURS as readonly string[]).includes(value);
 }
 
+/**
+ * The colour to draw a course in. `courses.colour` is nullable and is only
+ * filled in when the course is created through the app, so a course typed
+ * straight into the table editor still has to look like something: it falls
+ * back to the palette by its position in the course list.
+ */
+export function colourForCourse(
+  colour: string | null | undefined,
+  index: number
+): CourseColour {
+  if (isCourseColour(colour)) return colour;
+  return COURSE_COLOURS[index % COURSE_COLOURS.length];
+}
+
 function colourVar(colour: CourseColour): string {
   return `var(--course-${colour})`;
 }

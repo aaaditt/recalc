@@ -1,0 +1,33 @@
+{
+  "name": "Recalc",
+  "short_name": "Recalc",
+  "description": "A study workspace that knows when its contents have gone out of date.",
+  "id": "/today",
+  "start_url": "/today",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#F5F6F8",
+  "theme_color_dark": "#0E1116",
+  "background_color": "#F5F6F8",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

@@ -35,8 +35,15 @@ export default async function proxy(request: NextRequest) {
   // /styleguide is the design system's showroom: no data, no user, and it
   // 404s outside development. Public so the phone check does not need a
   // magic link first.
+  //
+  // The web app manifest is fetched by the browser without credentials, so it
+  // has to be reachable signed out or the app is not installable. It names
+  // four URLs and an icon; there is nothing in it to protect.
   const isPublic =
-    path.startsWith('/login') || path.startsWith('/auth') || path.startsWith('/styleguide');
+    path.startsWith('/login') ||
+    path.startsWith('/auth') ||
+    path.startsWith('/styleguide') ||
+    path === '/manifest.json';
 
   if (!user && !isPublic) {
     return NextResponse.redirect(new URL('/login', request.url));
