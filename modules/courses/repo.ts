@@ -6,6 +6,7 @@ import {
   syllabusUnitSchema,
   type ClassMeeting,
   type Course,
+  type MeetingStatus,
   type Session,
   type SyllabusUnit,
 } from './schema';
@@ -96,10 +97,27 @@ export async function listMeetingsForSessions(
   return (data ?? []).map((row) => classMeetingSchema.parse(row));
 }
 
+/** One meeting by id, or null. Scoped by workspace so RLS is not the only guard. */
+export async function findMeeting(
+  db: SupabaseClient,
+  workspaceId: string,
+  id: string
+): Promise<ClassMeeting | null> {
+  const { data, error } = await db
+    .from('class_meetings')
+    .select('*')
+    .eq('workspace_id', workspaceId)
+    .eq('id', id)
+    .maybeSingle();
+  if (error) throw new Error(`courses.findMeeting: ${error.message}`);
+  return data ? classMeetingSchema.parse(data) : null;
+}
+
 export type NewMeetingRow = {
   workspace_id: string;
   course_id: string;
-  session_id: string;
+  /** Null for a one-off: a make-up class, a guest lecture, an exam. */
+  session_id: string | null;
   starts_at: string;
   ends_at: string;
   room: string | null;
@@ -127,5 +145,40 @@ export async function updateMeetingSchedule(
     .select('*')
     .single();
   if (error) throw new Error(`courses.updateMeetingSchedule: ${error.message}`);
+  return classMeetingSchema.parse(data);
+}
+
+/**
+ * Move or resize one dated lecture. `.eq('id', ...)` and nothing else: the
+ * weekly pattern is not consulted and no sibling meeting is in the statement,
+ * which is what makes "editing one meeting never affects the others" true.
+ */
+export async function updateMeetingTimes(
+  db: SupabaseClient,
+  id: string,
+  patch: { starts_at: string; ends_at: string }
+): Promise<ClassMeeting> {
+  const { data, error } = await db
+    .from('class_meetings')
+    .update(patch)
+    .eq('id', id)
+    .select('*')
+    .single();
+  if (error) throw new Error(`courses.updateMeetingTimes: ${error.message}`);
+  return classMeetingSchema.parse(data);
+}
+
+export async function updateMeetingStatus(
+  db: SupabaseClient,
+  id: string,
+  status: MeetingStatus
+): Promise<ClassMeeting> {
+  const { data, error } = await db
+    .from('class_meetings')
+    .update({ status })
+    .eq('id', id)
+    .select('*')
+    .single();
+  if (error) throw new Error(`courses.updateMeetingStatus: ${error.message}`);
   return classMeetingSchema.parse(data);
 }

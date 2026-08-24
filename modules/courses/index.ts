@@ -2,9 +2,13 @@
 export {
   getCourses,
   getSyllabusUnits,
+  getMeeting,
   getMeetingsOnDate,
   getMeetingsBetween,
   generateMeetings,
+  rescheduleMeeting,
+  setMeetingStatus,
+  createOneOffMeeting,
 } from './service';
 export {
   courseSchema,
@@ -22,4 +26,6 @@ export {
   type MeetingStatus,
   type GenerateMeetingsInput,
   type GenerateMeetingsResult,
+  type CreateOneOffMeetingInput,
+  type RescheduleMeetingInput,
 } from './schema';

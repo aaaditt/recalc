@@ -37,6 +37,12 @@
   --course-tint-alpha: 8%;
   --course-dot-size: 6px;
 
+  /* A cancelled class keeps its rail and drops to a 5% tint (docs/DESIGN.md,
+     "Class blocks"). Set --course-tint-alpha to this on the block itself and
+     courseTint()'s color-mix picks it up — there is still only one place a
+     course colour is mixed. */
+  --course-tint-alpha-cancelled: 5%;
+
   /* Buttons: 32px high, 14px horizontal padding. On a touch screen they grow
      to the 44px minimum tap target. Both numbers are in DESIGN.md; this is how
      they coexist. */
@@ -58,6 +64,42 @@
   /* Room under scrolling content so its last row clears the bottom nav on a
      phone, plus whatever the home indicator takes. */
   --content-pad-bottom: calc(var(--bottom-nav-height) + 24px + env(safe-area-inset-bottom));
+
+  /* How wide a page is allowed to be. Most screens are a column of text and
+     stop at 42rem; the calendar is a grid and wants the room. */
+  --page-width: 42rem;
+  --page-width-wide: 68rem;
+
+  /* The calendar — docs/DESIGN.md, "Measurements taken from the approved
+     mockups". Added in slice 04, the slice that draws the grid. Every number
+     here is quoted from that section; none of them was re-derived. */
+  --week-hour-height: 80px;
+  --week-gutter-width: 56px;
+  --day-hour-height: 72px;
+  --day-block-inset-start: 60px;
+  --day-block-inset-end: 14px;
+  /* Deadlines live above the grid, never inside it. */
+  --allday-row-height: 42px;
+  /* Overlapping classes split the column evenly with a 3px gap. */
+  --block-gap: 3px;
+  --block-pad-block: 7px;
+  --block-pad-inline: 9px;
+  --now-dot-size: 7px;
+  --now-line-opacity: 0.55;
+  --month-date-size: 24px;
+  --month-dot-size: 5px;
+  /* The one calendar measurement docs/DESIGN.md does not give a number for.
+     Tall enough for a date, a row of dots and a deadline badge, and short
+     enough that six rows still fit a laptop screen without scrolling. */
+  --month-cell-height: 88px;
+  --strip-selected-size: 34px;
+  --strip-dot-size: 4px;
+
+  /* Today's column: docs/DESIGN.md asks for rgba(194,96,12,.035) — the light
+     accent at 3.5%, "barely there, on purpose". Written as a mix so the
+     channels stay in the one place they are allowed to be, and so the dark
+     theme gets the same barely-there wash of its own accent. */
+  --today-tint: color-mix(in srgb, var(--accent) 3.5%, transparent);
 }
 
 @media (pointer: coarse) {

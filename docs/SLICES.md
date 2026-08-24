@@ -9,7 +9,7 @@ column as you go — this is how a fresh session knows where we are.
 | 01 | Semester data — courses, sessions, meetings, units, tasks (no UI) | done |
 | 02 | Design system — tokens, fonts, course colours, primitives | done |
 | 03 | Today — the daily page | done |
-| 04 | **Calendar** — week / day / month, meeting generation | not started |
+| 04 | **Calendar** — week / day / month, meeting generation | done |
 | 05 | Notes + lecture pages — TipTap over blocks | not started |
 | 06 | Tasks — CRUD, linked to courses, units and lectures | not started |
 | 07 | Focus — Pomodoro logged against a syllabus unit | not started |

@@ -394,6 +394,129 @@ Because (rule 10): none were needed. The nav icons are four inline SVGs, the
 PWA icons come from a script over Node's `zlib`, and everything on the page is
 built from the slice-02 primitives.
 
+## 2026-08-24 — The calendar's arithmetic lives in `lib/calendar.ts`
+Because: four things on this screen can be silently wrong and none of them can
+be tested through a Server Component — the auto-cropped hour range, the 5-vs-7
+column detection, where a block sits in a day, and which blocks have to share a
+column. They are pure functions over instants, so they move out of the
+components and get `lib/calendar.test.ts` around them, exactly as `/today`'s
+arithmetic moved to `lib/today.ts` in slice 03.
+Instead of: computing positions inline in the grid, where the week that
+renders 00:00–23:59 is only found by looking at it.
+
+## 2026-08-24 — The calendar is one client component over a wide server window
+Because: docs/DESIGN.md says "changing week or day must never show a loading
+state" and "prefetch neighbours". The page fetches ten weeks either side of the
+cursor — a few hundred rows — and hands them down, so every arrow key, swipe
+and view switch is instant with no round trip at all, which is stronger than
+prefetching. Stepping outside that window is the only thing that asks the
+server again, and the current screen stays up while it does. The views below
+the shell are presentational and take props.
+Instead of: a Server Component per week (a round trip per arrow key), or
+route-level prefetching (a round trip that is merely early).
+
+## 2026-08-24 — 'auto' is a fourth view, resolved in CSS not in JavaScript
+Because: week is the desktop default and day is the mobile default, which makes
+"which view" a question about the viewport. Answering it with `matchMedia`
+during render means either a wrong first paint or a hydration mismatch. So
+before the user picks, both views are rendered and `hidden md:block` /
+`md:hidden` decide — right on the first frame, on either device. The subtitle
+and the highlighted tab are decided the same way. Where an event handler needs
+to know which one is showing (arrow keys, swipe), it asks the DOM: the week
+wrapper is hidden, so it has no `offsetParent`.
+Instead of: a viewport check in JavaScript, or defaulting to one view
+everywhere and making the other device switch every time.
+
+## 2026-08-24 — The clock is `useSyncExternalStore`, not `useState` in an effect
+Because: the now-line has to update every minute without the server rendering a
+time it cannot know. A store whose server snapshot is `null` renders no
+now-line in the HTML and swaps the real one in after hydration — no mismatch,
+and no `setState` in an effect body (which the lint rule now rejects outright).
+Instead of: `useState(null)` plus a mount effect, which is the same behaviour
+with a cascading render and a lint error.
+
+## 2026-08-24 — Dragging a lecture marks it `moved`
+Because: a dragged lecture no longer matches its weekly pattern, and the next
+`generateMeetings` run would drag it straight back. `isHandEdited` already
+protects any meeting whose `status` is not `scheduled`, so setting `moved` is
+the whole fix and needs no new column. A cancelled lecture that is dragged
+stays cancelled. `modules/courses/meeting-edits.test.ts` is the test.
+Instead of: clearing `session_id` (which would lose the link to the pattern the
+lecture came from), or a new `hand_edited` boolean duplicating what `status`
+already says.
+
+## 2026-08-24 — The reading column moved into an `(app)/(narrow)` route group
+Because: `/calendar` is a grid and five day columns need more than the 42rem a
+page of text should ever be. A child cannot widen a max-width its parent set,
+so the constraint moved down one level into a route group — `/today`, `/notes`,
+`/review` and `/settings/*` are in `(narrow)` and get the column for free,
+`/calendar` sits beside it and sets its own. No file's contents changed and no
+URL changed, which is why this was the option chosen over editing three pages
+outside the slice (rule 9).
+Instead of: a `has-[]` variant on the shared layout (clever, and clever is a
+bug), or removing the wrapper and adding one to every page.
+
+## 2026-08-24 — The auto-crop wins over the now-line
+Because: DESIGN.md calls a grid full of empty night hours "the single most
+common way this screen goes wrong", and the crop is the fix. On a day whose
+last class ends at noon, that means the grid stops at 13:00 and the now-line at
+18:20 is simply not drawn. Stretching the range to reach the current time would
+undo the crop on exactly the light days it helps most.
+Instead of: always including "now" in the range, which turns a two-class
+Tuesday back into a wall of empty hours.
+
+## 2026-08-24 — Drag to move and resize is mouse-only
+Because: on a phone the day view is the default and a class is edited by
+tapping it open; a drag handler that accepted touch would turn every attempt to
+scroll the grid into an accidental reschedule. `event.pointerType !== 'mouse'`
+is one line and removes the whole class of problem.
+Instead of: long-press-to-drag, which is a gesture to learn and a timer to get
+wrong, for an interaction the week grid (a laptop screen) already covers.
+
+## 2026-08-24 — A tap on a class opens a sheet, not the lecture page
+Because: DESIGN.md says a class taps through to the lecture page, and that page
+is slice 05. The sheet carries the header the lecture page will have — code,
+name, date, time, room, cancelled state — plus the one-tap cancel this slice
+owes, and becomes a link when there is somewhere to link to.
+Instead of: shipping a dead route now, or leaving classes unclickable and
+having no home for "cancel this class".
+
+## 2026-08-24 — Block detail is chosen by duration, not by measured height
+Because: DESIGN.md says "under ~80px tall, drop the course name", and the hour
+row is 80px — so ~80px tall *is* one hour. Writing the rule as a duration keeps
+the pixel out of the components and lets `blockDetail` be a pure function with
+a test, rather than something that has to measure itself after layout.
+Instead of: a ResizeObserver on every block, which is a measurement pass per
+class per render to learn something the start and end times already say.
+
+## 2026-08-24 — The date strip's dots are course colours, not the accent
+Because: DESIGN.md's Measurements section asks for "a 4px accent dot under any
+day with classes", but its Neutrals section says the accent appears in exactly
+two places and a class is not one of them — and the month view, one section
+above, uses course-colour dots for exactly the same job. Course colours make
+the strip and the month grid say the same thing the same way, and keep the
+accent meaning "this wants you". Flagged below for a ruling.
+Instead of: an accent dot (four places the accent now appears, and a strip that
+disagrees with the month view), or guessing silently.
+
+## 2026-08-24 — 12px is the floor in the calendar too
+Because: DESIGN.md's Measurements section specifies 12.5px course names,
+11.5px room/time and 11px gutter labels, and its Type section says never
+smaller than 12px. Slice 02 settled that contradiction in favour of the floor
+and built `text-12` as the smallest size on the scale (plus `text-label` at
+11px for uppercase mono labels only). The calendar follows the built tokens:
+code, name, room, time and gutter are all `text-12`; the uppercase weekday and
+"DUE" labels are `text-label`.
+Instead of: adding `text-12_5` and `text-11_5` tokens for two numbers that
+contradict the rule the scale was built to enforce.
+
+## 2026-08-24 — No migration and no dependencies in slice 04
+Because: `class_meetings` already has every column this screen needs — slice 01
+built it — and the grid is hand-rolled per the earlier decision, so there was
+nothing to install. `--week-hour-height` and the rest of DESIGN.md's calendar
+measurements went into `app/globals.css` beside the other tokens, because rule
+7 says a component may not carry a raw value.
+
 ---
 
 ## Noticed, not fixed
@@ -419,8 +542,10 @@ Things spotted outside the current slice. Do not fix them mid-slice; write them 
   12.5px course names, 11.5px room/time, and 11px mono gutter and uppercase
   labels. Slice 02 took the floor as the rule and added one exception,
   `text-label` (11px), for the uppercase mono labels the Fonts section
-  explicitly specifies. Whoever builds the calendar in slice 04 should get a
-  ruling on 12.5 / 11.5 rather than inventing tokens for them.
+  explicitly specifies. **Slice 04 built the calendar to the floor** — see the
+  decision above — so nothing in the app uses 12.5 or 11.5. Aadit still owes a
+  one-line ruling: either delete those two numbers from DESIGN.md, or say the
+  calendar is an exception and slice 04 needs revisiting.
 - **Slice 03 was not deployed.** Step 5 of `prompts/03-today.md` — connect the
   repo to Vercel, set the env vars, confirm the live URL — needs an account
   this session cannot sign into. The app builds for production
@@ -449,3 +574,25 @@ Things spotted outside the current slice. Do not fix them mid-slice; write them 
 - There is no `Input` / `Textarea` primitive. Nothing in slices 00–02 has a form
   worth styling; slice 06 (Tasks) is the first that does, and it should add them
   to `/components/ui` and to `/styleguide` rather than styling inputs inline.
+  **Slice 04 now has two forms styling inputs inline** — the add-a-one-off sheet
+  and `/settings/semester` — each with the same local `FIELD` string. Slice 06
+  should add the primitive and replace both.
+- `docs/DESIGN.md` contradicts itself on the accent, too. Neutrals says the
+  accent appears "in exactly two places: something needs attention, and the
+  now-line"; Measurements then asks for "a 4px accent dot under any day with
+  classes" in the day view's date strip. Slice 04 used course-colour dots
+  instead, to match the month view and keep the accent scarce (see the decision
+  above). Worth a one-line ruling.
+- `/settings/semester` is reachable only from a small "Semester" link in the
+  calendar's header. The bottom nav is a four-column grid and a fifth
+  destination would break it, so adding a real settings section is its own
+  small piece of work — probably when slice 10 (BYOK settings) needs somewhere
+  to live.
+- The calendar's week grid does not scroll independently — the whole page
+  scrolls. On a short laptop screen a term with an 08:00 class and a 19:00 one
+  means scrolling the page to see the evening. A sticky day-heading row inside
+  a scrolling grid would be nicer and is a self-contained change; it was not in
+  the slice.
+- `modules/courses` has no way to delete a meeting. A one-off added by mistake
+  can be cancelled but not removed. Slice 06 or a later calendar pass should
+  add it; it needs a confirmation step, which is why it was not slipped in here.

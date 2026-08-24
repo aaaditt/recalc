@@ -80,6 +80,28 @@ export const generateMeetingsInputSchema = z.object({
   term: z.string().min(1).optional(),
 });
 
+/**
+ * A lecture that is not part of the weekly pattern: a make-up class, a guest
+ * lecture, an exam. `session_id` stays null, so `generateMeetings` never sees
+ * it and never touches it.
+ */
+export const createOneOffMeetingInputSchema = z.object({
+  workspaceId: z.uuid(),
+  courseId: z.uuid(),
+  // The local day it happens on, and the wall-clock times it runs between.
+  date: z.iso.date(),
+  startsAt: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/, 'expected HH:MM'),
+  endsAt: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/, 'expected HH:MM'),
+  room: z.string().trim().min(1).nullable().optional(),
+  timeZone: z.string().min(1).optional(),
+});
+
+/** Moving or resizing exactly one meeting. Instants, because it is dated. */
+export const rescheduleMeetingInputSchema = z.object({
+  startsAt: z.iso.datetime({ offset: true }),
+  endsAt: z.iso.datetime({ offset: true }),
+});
+
 export type Course = z.infer<typeof courseSchema>;
 export type Session = z.infer<typeof sessionSchema>;
 export type SyllabusUnit = z.infer<typeof syllabusUnitSchema>;
@@ -87,6 +109,8 @@ export type SyllabusUnitStatus = z.infer<typeof syllabusUnitStatusSchema>;
 export type ClassMeeting = z.infer<typeof classMeetingSchema>;
 export type MeetingStatus = z.infer<typeof meetingStatusSchema>;
 export type GenerateMeetingsInput = z.input<typeof generateMeetingsInputSchema>;
+export type CreateOneOffMeetingInput = z.input<typeof createOneOffMeetingInputSchema>;
+export type RescheduleMeetingInput = z.input<typeof rescheduleMeetingInputSchema>;
 
 /** What a run of generateMeetings did. All three are zero on a no-op re-run. */
 export type GenerateMeetingsResult = {

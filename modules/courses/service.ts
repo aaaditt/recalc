@@ -11,11 +11,17 @@ import {
 } from '@/lib/time';
 import * as repo from './repo';
 import {
+  createOneOffMeetingInputSchema,
   generateMeetingsInputSchema,
+  meetingStatusSchema,
+  rescheduleMeetingInputSchema,
   type ClassMeeting,
   type Course,
+  type CreateOneOffMeetingInput,
   type GenerateMeetingsInput,
   type GenerateMeetingsResult,
+  type MeetingStatus,
+  type RescheduleMeetingInput,
   type Session,
   type SyllabusUnit,
 } from './schema';
@@ -60,6 +66,104 @@ export async function getMeetingsBetween(
 ): Promise<ClassMeeting[]> {
   const range = dateRangeUtc(from, to, timeZone);
   return repo.listMeetingsBetween(db, workspaceId, range.startsAt, range.endsAt);
+}
+
+/** One lecture by id, or null when it is not this workspace's. */
+export async function getMeeting(
+  db: SupabaseClient,
+  workspaceId: string,
+  id: string
+): Promise<ClassMeeting | null> {
+  return repo.findMeeting(db, workspaceId, id);
+}
+
+// ---------------------------------------------------------------------------
+// Editing one meeting
+//
+// docs/SCHEMA.md: meetings are generated once and then edited individually.
+// Everything below changes exactly one row and never consults the weekly
+// pattern, so moving Tuesday's lecture leaves every other Tuesday alone.
+// ---------------------------------------------------------------------------
+
+/**
+ * Move or resize one dated lecture — the week grid's drag.
+ *
+ * The meeting keeps its `session_id`, so it is now out of step with the
+ * pattern. That is deliberate: `generateMeetings` leaves it alone from here
+ * because a rescheduled lecture is a hand-edit, and the pattern re-asserting
+ * itself would undo the move on the next run. (See `isHandEdited`: a moved
+ * meeting is marked `moved`, which is the flag that protects it.)
+ */
+export async function rescheduleMeeting(
+  db: SupabaseClient,
+  workspaceId: string,
+  id: string,
+  input: RescheduleMeetingInput
+): Promise<ClassMeeting> {
+  const parsed = rescheduleMeetingInputSchema.parse(input);
+
+  if (new Date(parsed.endsAt).getTime() <= new Date(parsed.startsAt).getTime()) {
+    throw new Error('rescheduleMeeting: a lecture cannot end before it starts');
+  }
+
+  const meeting = await repo.findMeeting(db, workspaceId, id);
+  if (!meeting) throw new Error(`rescheduleMeeting: no meeting ${id} in this workspace`);
+
+  const moved = await repo.updateMeetingTimes(db, id, {
+    starts_at: parsed.startsAt,
+    ends_at: parsed.endsAt,
+  });
+
+  // A lecture that was dragged is no longer what the timetable says. Marking
+  // it `moved` is what stops the next generateMeetings run putting it back.
+  // A cancelled lecture stays cancelled — dragging it does not un-cancel it.
+  if (moved.status === 'scheduled' && moved.session_id !== null) {
+    return repo.updateMeetingStatus(db, id, 'moved');
+  }
+  return moved;
+}
+
+/** One tap on the calendar: cancel this class, or put it back. */
+export async function setMeetingStatus(
+  db: SupabaseClient,
+  workspaceId: string,
+  id: string,
+  status: MeetingStatus
+): Promise<ClassMeeting> {
+  const meeting = await repo.findMeeting(db, workspaceId, id);
+  if (!meeting) throw new Error(`setMeetingStatus: no meeting ${id} in this workspace`);
+  return repo.updateMeetingStatus(db, id, meetingStatusSchema.parse(status));
+}
+
+/**
+ * A lecture the weekly pattern does not know about: a make-up class, a guest
+ * lecture, an exam. `session_id` is null, which is exactly what keeps
+ * `generateMeetings` from ever touching or duplicating it.
+ */
+export async function createOneOffMeeting(
+  db: SupabaseClient,
+  input: CreateOneOffMeetingInput
+): Promise<ClassMeeting> {
+  const parsed = createOneOffMeetingInputSchema.parse(input);
+  const timeZone = parsed.timeZone ?? localTimeZone();
+
+  const startsAt = zonedToUtc(parsed.date, parsed.startsAt, timeZone);
+  const endsAt = zonedToUtc(parsed.date, parsed.endsAt, timeZone);
+  if (endsAt.getTime() <= startsAt.getTime()) {
+    throw new Error('createOneOffMeeting: a lecture cannot end before it starts');
+  }
+
+  const [created] = await repo.insertMeetings(db, [
+    {
+      workspace_id: parsed.workspaceId,
+      course_id: parsed.courseId,
+      session_id: null,
+      starts_at: startsAt.toISOString(),
+      ends_at: endsAt.toISOString(),
+      room: parsed.room ?? null,
+    },
+  ]);
+  return created;
 }
 
 // ---------------------------------------------------------------------------

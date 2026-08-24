@@ -59,7 +59,7 @@ const DESTINATIONS: Destination[] = [
   {
     href: '/calendar',
     label: 'Calendar',
-    built: false,
+    built: true,
     // A week grid.
     icon: (
       <Icon>
