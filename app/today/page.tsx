@@ -9,7 +9,7 @@ export default async function TodayPage() {
 
   return (
     <main className="mx-auto max-w-sm py-16">
-      <h1 className="text-xl font-semibold">Hello</h1>
+      <h1 className="text-20 font-semibold">Hello</h1>
       <p>Signed in as {user?.email}</p>
     </main>
   );

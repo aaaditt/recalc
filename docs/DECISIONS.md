@@ -211,6 +211,93 @@ Because (rule 10): `tsx` (dev) — runs `scripts/seed-check.ts` as TypeScript wi
 the `@/` path alias resolved; the slice spec names `npx tsx` as the command, and
 pinning it locally means it is not re-downloaded on every run.
 
+## 2026-08-24 — `app/globals.css` is the token file, and the only file with a hex in it
+Because: rule 7 needs somewhere to point at. Tailwind v4 is CSS-first, so the
+tokens have to be CSS custom properties anyway; making that same file the single
+source means "is this colour allowed?" is answered by one `grep`.
+Instead of: a `lib/tokens.ts` generating CSS, which is two files that can
+disagree and a build step to keep them agreeing.
+
+## 2026-08-24 — Dark mode is a duplicated token block, not `light-dark()`
+Because: `/styleguide` shows both themes side by side, which means a nested
+element must be able to override its ancestors' theme. `light-dark()` would be
+one copy instead of two, but Tailwind's Lightning CSS polyfills it for its
+browser targets and the polyfill's behaviour in a nested subtree is not
+something to bet the whole colour system on. Two plain blocks — one for
+`prefers-color-scheme`, one for `data-theme="dark"` — always work. A test
+asserts the two copies are byte-identical, so they cannot drift.
+Instead of: `light-dark()` (clever, and clever is a bug), or a class-based
+`.dark` strategy that needs a script in `<head>` to avoid a flash.
+
+## 2026-08-24 — Tailwind's default colour palette and type scale are deleted
+Because: `--color-*: initial` and `--text-*: initial` in `@theme` mean
+`bg-blue-500` and `text-xl` do not exist to be typed by accident in slice 09 at
+midnight. DESIGN.md says the scale is `12 · 13 · 14 · 16 · 20 · 26 · 34` and
+"nothing between"; deleting the rest is what makes that true rather than
+aspirational. Sizes are named for their pixels (`text-16`) because that is the
+unit DESIGN.md is written in.
+Instead of: adding our tokens alongside the defaults and relying on everyone
+remembering which half is ours.
+
+## 2026-08-24 — Colour utilities are `text-ink` / `text-muted` / `text-faint`
+Because: `--text-muted` maps to `text-muted` cleanly, but `--text` would map to
+`text-text`, which reads like a typo and will be mistyped. `ink` is the one
+rename in the system, and `/styleguide` lists every token beside its utility so
+it is discoverable without reading this file.
+Instead of: `text-text`, or `text-foreground`, which is a word from a different
+design system.
+
+## 2026-08-24 — Course colours are not registered with Tailwind
+Because: DESIGN.md's rule is that a course colour appears as a 3px rail, an 8%
+tint, or a small dot, and never as text or a saturated fill. If `bg-course-teal`
+existed, a later slice would use it and the calendar would become a fruit salad.
+The eight are plain CSS variables reachable only through `courseRail`,
+`courseTint` and `courseDot` in `lib/course-colours.ts`, and those return the
+variable, never a hex.
+Instead of: eight entries in the Tailwind palette, which is more convenient and
+exactly the convenience that breaks the rule.
+
+## 2026-08-24 — `courseTint` uses `color-mix`, not `rgba(R,G,B,.08)`
+Because: the literal `rgba()` form needs the channels, which would put the eight
+hexes into TypeScript and break rule 7. `color-mix(in srgb, var(--course-x) 8%,
+transparent)` is the same colour without knowing them. Support matches the
+browser targets Tailwind v4 already compiles for.
+Instead of: a hex-to-rgba helper in app code, i.e. a second place colours live.
+
+## 2026-08-24 — `--control-height` is 32px, or 44px on a coarse pointer
+Because: DESIGN.md asks for both — "buttons: 32px high" and "tap targets: 44px
+minimum on touch". A `@media (pointer: coarse)` override on the token satisfies
+both without a single component knowing which device it is on.
+Instead of: picking one number and being wrong on the other device, or a
+`size="touch"` prop every call site has to remember.
+
+## 2026-08-24 — Font sizes are in px, not rem
+Because: DESIGN.md is written in px, including a hard floor ("never smaller than
+12px anywhere") that only means something in px. The trade-off is real — px
+ignores the browser's font-size setting — and is accepted for a single-user app
+whose author wrote the spec.
+Instead of: a rem scale that silently renames every number in the design doc.
+
+## 2026-08-24 — `/styleguide` 404s outside development, and is public inside it
+Because: it is a developer tool, not a screen, so it should not ship. But the
+definition of done is checking it on a phone, and the phone is not signed in —
+so `proxy.ts` lets it through without a session. It renders no data and no user,
+and in production there is nothing there to let through.
+Instead of: leaving it behind auth (the phone check needs a magic link first),
+or shipping it publicly (a page nobody asked for, on the internet).
+
+## 2026-08-24 — `cx()` instead of `clsx` + `tailwind-merge`
+Because: it is six lines. Merge semantics also encourage primitives that set
+opinionated defaults and quietly fight their callers; without them, the
+primitives are pushed to set only classes a caller will not want to override,
+which is the "unstyled-by-default" the slice asked for.
+Instead of: two dependencies for string joining.
+
+## 2026-08-24 — No dependencies added in slice 02
+Because (rule 10): none were needed. Geist, Geist Mono and Source Serif 4 all
+come from `next/font/google`, which ships with Next. The primitives are ~20
+lines each, per the slice's "do not install a UI kit".
+
 ---
 
 ## Noticed, not fixed
@@ -231,3 +318,20 @@ Things spotted outside the current slice. Do not fix them mid-slice; write them 
   module resolution and belongs in its own change.
 - `docs/SCHEMA.md` lists `study_sessions` under the semester layer. It is not in
   slice 01's build list, so it was not created. Slice 07 (Focus) needs it.
+- `docs/DESIGN.md` contradicts itself on the type floor. The Type section says
+  "never smaller than 12px anywhere"; the Measurements section then specifies
+  12.5px course names, 11.5px room/time, and 11px mono gutter and uppercase
+  labels. Slice 02 took the floor as the rule and added one exception,
+  `text-label` (11px), for the uppercase mono labels the Fonts section
+  explicitly specifies. Whoever builds the calendar in slice 04 should get a
+  ruling on 12.5 / 11.5 rather than inventing tokens for them.
+- `app/login/page.tsx` and `app/today/page.tsx` are still slice-00 placeholders
+  with unstyled borders and inputs; their own comments say "bare on purpose —
+  the design system arrives in slice 02". Slice 02 built the system but not
+  screens, so only the one class that the new type scale removed (`text-xl` ->
+  `text-20`) was touched. Slice 03 should rebuild `/today` properly, and the
+  login screen wants a pass at some point since it is the only screen that
+  renders before auth.
+- There is no `Input` / `Textarea` primitive. Nothing in slices 00–02 has a form
+  worth styling; slice 06 (Tasks) is the first that does, and it should add them
+  to `/components/ui` and to `/styleguide` rather than styling inputs inline.

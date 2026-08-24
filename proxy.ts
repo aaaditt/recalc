@@ -32,7 +32,11 @@ export default async function proxy(request: NextRequest) {
   } = await supabase.auth.getUser();
 
   const path = request.nextUrl.pathname;
-  const isPublic = path.startsWith('/login') || path.startsWith('/auth');
+  // /styleguide is the design system's showroom: no data, no user, and it
+  // 404s outside development. Public so the phone check does not need a
+  // magic link first.
+  const isPublic =
+    path.startsWith('/login') || path.startsWith('/auth') || path.startsWith('/styleguide');
 
   if (!user && !isPublic) {
     return NextResponse.redirect(new URL('/login', request.url));

@@ -10,7 +10,7 @@ export default async function LoginPage({
 
   return (
     <main className="mx-auto flex min-h-screen max-w-sm flex-col justify-center gap-4">
-      <h1 className="text-xl font-semibold">Recalc</h1>
+      <h1 className="text-20 font-semibold">Recalc</h1>
 
       {sent ? (
         <p>Check your email for a sign-in link.</p>

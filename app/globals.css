@@ -1,26 +1,256 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
+/* ==========================================================================
+   THE TOKEN FILE
+
+   Every colour in Recalc is defined here and nowhere else. A hex code in any
+   other file is a bug (CLAUDE.md, Never rule 7) and lib/design-tokens.test.ts
+   will fail on it.
+
+   Values are copied verbatim from the tables in docs/DESIGN.md. They were used
+   to build the signed-off mockups. Do not re-pick them.
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   Theme-independent tokens: the course palette, and the few measurements the
+   primitives need. Everything else in DESIGN.md's "Measurements" section
+   belongs to the slice that first draws it.
+   -------------------------------------------------------------------------- */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* The eight course colours. The same in both themes — a course does not
+     change identity when the lights go off.
+
+     These are deliberately NOT registered with Tailwind. There is no
+     `bg-course-indigo`. The only sanctioned ways to put a course colour on
+     screen are courseRail / courseTint / courseDot in lib/course-colours.ts. */
+  --course-indigo: #5B6EE1;
+  --course-rose: #C25C6E;
+  --course-olive: #8A9440;
+  --course-teal: #2E9E8F;
+  --course-violet: #7D62C4;
+  --course-clay: #B5654F;
+  --course-amber: #C6803A;
+  --course-sky: #3D8FCB;
+
+  /* How a course colour is allowed to appear. Never a saturated fill. */
+  --course-rail-width: 3px;
+  --course-tint-alpha: 8%;
+  --course-dot-size: 6px;
+
+  /* Buttons: 32px high, 14px horizontal padding. On a touch screen they grow
+     to the 44px minimum tap target. Both numbers are in DESIGN.md; this is how
+     they coexist. */
+  --control-height: 32px;
+  --control-padding-x: 14px;
+
+  /* Sheet: a bottom sheet on mobile, a side panel from 640px up. */
+  --sheet-width: 380px;
+  --sheet-max-block: 85svh;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
+@media (pointer: coarse) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --control-height: 44px;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* --------------------------------------------------------------------------
+   Light — the default.
+   -------------------------------------------------------------------------- */
+:root,
+[data-theme='light'] {
+  color-scheme: light;
+
+  --bg: #F5F6F8;
+  --surface: #FFFFFF;
+  --sunken: #EDEFF3;
+  --border: #DFE2E9;
+  --line: #E9EBF0;
+  --text: #171B24;
+  --text-muted: #5C6675;
+  --text-faint: #8A93A3;
+  --accent: #C2600C;
+  --accent-bg: #FBF0E4;
+  --ok: #216356;
+  --ok-bg: #E4EFEB;
+
+  --shadow: 0 10px 30px -12px rgb(23 27 36 / 0.22);
+}
+
+/* --------------------------------------------------------------------------
+   Dark. Redefines the tokens and nothing else.
+
+   The block appears twice on purpose: once for the OS preference, once for an
+   explicit `data-theme="dark"` (the /styleguide toggle, and the side-by-side
+   panels there). They must stay byte-identical — lib/design-tokens.test.ts
+   compares them.
+   -------------------------------------------------------------------------- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    /* dark-tokens:start */
+    color-scheme: dark;
+
+    --bg: #0E1116;
+    --surface: #161A21;
+    --sunken: #1B2029;
+    --border: #262C37;
+    --line: #1F242D;
+    --text: #E6E9EF;
+    --text-muted: #939DAD;
+    --text-faint: #6E7889;
+    --accent: #E0913F;
+    --accent-bg: #2B2113;
+    --ok: #5AB79F;
+    --ok-bg: #13251F;
+
+    --shadow: 0 10px 30px -12px rgb(0 0 0 / 0.55);
+    /* dark-tokens:end */
+  }
+}
+
+[data-theme='dark'] {
+  /* dark-tokens:start */
+  color-scheme: dark;
+
+  --bg: #0E1116;
+  --surface: #161A21;
+  --sunken: #1B2029;
+  --border: #262C37;
+  --line: #1F242D;
+  --text: #E6E9EF;
+  --text-muted: #939DAD;
+  --text-faint: #6E7889;
+  --accent: #E0913F;
+  --accent-bg: #2B2113;
+  --ok: #5AB79F;
+  --ok-bg: #13251F;
+
+  --shadow: 0 10px 30px -12px rgb(0 0 0 / 0.55);
+  /* dark-tokens:end */
+}
+
+/* ==========================================================================
+   Tailwind theme
+
+   `inline` matters: it makes `bg-surface` compile to `var(--surface)` rather
+   than to a copy taken at :root. Without it a `data-theme` subtree would keep
+   the page's colours instead of its own.
+   ========================================================================== */
+@theme inline {
+  /* Colours ---------------------------------------------------------------
+     The default Tailwind palette is cleared. In this app colour identifies a
+     course and nothing else gets to be colourful (DESIGN.md, principle 4), so
+     `bg-blue-500` should not exist to be typed by accident. */
+  --color-*: initial;
+
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-sunken: var(--sunken);
+  --color-border: var(--border);
+  --color-line: var(--line);
+
+  /* `text-ink` / `text-muted` / `text-faint` are --text / --text-muted /
+     --text-faint. Named `ink` because `text-text` reads like a typo. */
+  --color-ink: var(--text);
+  --color-muted: var(--text-muted);
+  --color-faint: var(--text-faint);
+
+  --color-accent: var(--accent);
+  --color-accent-bg: var(--accent-bg);
+  --color-ok: var(--ok);
+  --color-ok-bg: var(--ok-bg);
+
+  /* Type ------------------------------------------------------------------
+     12 · 13 · 14 · 16 · 20 · 26 · 34. Nothing between, so the default scale is
+     cleared too — `text-xl` is not a thing here. Sizes are named for their
+     pixels because that is what DESIGN.md is written in.
+
+     `text-label` (11px) is the one sanctioned exception to the 12px floor:
+     DESIGN.md's uppercase mono labels. It carries its own tracking. */
+  --text-*: initial;
+  --text-12: 12px;
+  --text-13: 13px;
+  --text-14: 14px;
+  --text-16: 16px;
+  --text-20: 20px;
+  --text-26: 26px;
+  --text-34: 34px;
+  --text-label: 11px;
+  --text-label--letter-spacing: 0.12em;
+
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --font-serif: var(--font-source-serif), ui-serif, Georgia, serif;
+
+  /* Shape -----------------------------------------------------------------
+     5px class blocks, 6px cards and buttons, 10px sheets, full for pills. */
+  --radius-block: 5px;
+  --radius-card: 6px;
+  --radius-sheet: 10px;
+
+  /* One shadow, for things that genuinely float. Hairlines everywhere else. */
+  --shadow-float: var(--shadow);
+}
+
+/* Motion. Everything is <=150ms and none of it is tied to scrolling. */
+@theme {
+  --animate-rise: rise 120ms ease-out;
+  --animate-fade: fade 120ms ease-out;
+
+  @keyframes rise {
+    from {
+      transform: translateY(8px);
+      opacity: 0;
+    }
+    to {
+      transform: none;
+      opacity: 1;
+    }
+  }
+
+  @keyframes fade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+}
+
+/* ==========================================================================
+   Base
+   ========================================================================== */
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: 16px;
+    line-height: 1.5;
+
+    /* Digits align in a column everywhere — times, durations, dates, counts.
+       DESIGN.md calls this non-negotiable in the calendar, and there is no
+       screen where proportional figures are better. */
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Note content, and only note content. */
+  .prose-note {
+    font-family: var(--font-serif);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 1ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 1ms !important;
+    }
+  }
 }
