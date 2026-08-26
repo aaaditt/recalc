@@ -2,11 +2,13 @@ import type { ReactNode } from 'react';
 
 import { toggleTaskDoneAction } from '../tasks/actions';
 import { ClassRow } from '@/components/today/class-row';
+import { StudyStrip } from '@/components/today/study-strip';
 import { TaskRow } from '@/components/today/task-row';
 import { Card, CardDivider } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageHeader } from '@/components/ui/page-header';
 import { colourForCourse, type CourseColour } from '@/lib/course-colours';
+import { formatMinutes } from '@/lib/study';
 import { createClient } from '@/lib/supabase/server';
 import {
   localDateKey,
@@ -24,6 +26,7 @@ import {
   groupTasksByDay,
 } from '@/lib/today';
 import { getCourses, getMeetingsOnDate } from '@/modules/courses';
+import { getMinutesOnDate, getMinutesThisWeek } from '@/modules/study';
 import { getOverdueTasks, getTasksDueBetween, type Task } from '@/modules/tasks';
 import { ensureWorkspace } from '@/modules/workspaces';
 
@@ -113,18 +116,22 @@ export default async function TodayPage() {
   // a deadline from March is still a deadline. Until slice 06 the tasks module
   // could only answer the first, and this page faked the second with a 30-day
   // lookback. It does not any more.
-  const [courses, meetings, dueTasks, overdueTasks] = await Promise.all([
-    getCourses(supabase, workspace.id),
-    getMeetingsOnDate(supabase, workspace.id, today, zone),
-    getTasksDueBetween(
-      supabase,
-      workspace.id,
-      today,
-      shiftDate(today, DUE_WINDOW_DAYS - 1),
-      zone
-    ),
-    getOverdueTasks(supabase, workspace.id, now),
-  ]);
+  const [courses, meetings, dueTasks, overdueTasks, minutesToday, minutesThisWeek] =
+    await Promise.all([
+      getCourses(supabase, workspace.id),
+      getMeetingsOnDate(supabase, workspace.id, today, zone),
+      getTasksDueBetween(
+        supabase,
+        workspace.id,
+        today,
+        shiftDate(today, DUE_WINDOW_DAYS - 1),
+        zone
+      ),
+      getOverdueTasks(supabase, workspace.id, now),
+      // The two numbers prompts/07-focus.md allows, and no more.
+      getMinutesOnDate(supabase, workspace.id, today, zone),
+      getMinutesThisWeek(supabase, workspace.id, zone, today),
+    ]);
 
   // A task due at 08:00 on a morning it is now 10:00 is in both lists.
   const seen = new Set<string>();
@@ -160,7 +167,16 @@ export default async function TodayPage() {
     <>
       <PageHeader title="Today" subtitle={formatDate(today)} />
 
-      <section className="pt-2">
+      {/* Minutes studied, and the way in to /focus. Two numbers, no chart —
+          prompts/07-focus.md: "do not build a stats dashboard". */}
+      <div className="pt-2">
+        <StudyStrip
+          today={formatMinutes(minutesToday)}
+          week={formatMinutes(minutesThisWeek)}
+        />
+      </div>
+
+      <section className="pt-8">
         <SectionLabel>Classes</SectionLabel>
 
         {meetings.length === 0 ? (

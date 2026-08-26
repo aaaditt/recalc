@@ -12,7 +12,7 @@ column as you go — this is how a fresh session knows where we are.
 | 04 | **Calendar** — week / day / month, meeting generation | done |
 | 05 | Notes + lecture pages — TipTap over blocks | done |
 | 06 | Tasks — CRUD, linked to courses, units and lectures | done |
-| 07 | Focus — Pomodoro logged against a syllabus unit | not started |
+| 07 | Focus — Pomodoro logged against a syllabus unit | done |
 | 08 | Syllabus — ordered units, status, progress | not started |
 | 09 | Google Drive — connect, picker, attach files to lectures | not started |
 | 10 | Agents — BYOK settings, encrypted keys, role registry | not started |

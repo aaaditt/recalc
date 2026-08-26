@@ -703,6 +703,111 @@ one measurement the screens needed that DESIGN.md does not specify,
 rule 7 says a component may not carry a raw value. Nothing was installed: the
 shorthand parser is regexes over tokens rather than a date library.
 
+## 2026-08-26 — The timer is two instants in `localStorage`, never a countdown
+Because: prompts/07-focus.md's third point is the whole slice — "store the start
+time, not a countdown... do not rely on a `setInterval` staying alive". A
+`Timer` is `{ startedAt, pausedAt, pausedMs }` and nothing else; every question
+the screen asks (how long is left, is it done, how many minutes to log) is a
+pure function of those three and `Date.now()`, in `lib/pomodoro.ts`, with its
+own test. The interval in `focus-timer.tsx` only repaints digits — kill it,
+freeze the tab, lock the phone for twenty minutes, and the answer on return is
+still right. `localStorage` rather than React state so a refresh, a back button
+or a second tab all find the same block still running.
+Instead of: a `setInterval` decrementing a number in state (wrong the moment the
+tab is backgrounded), or a row in the database written at start and updated at
+the end (a network round trip in the way of pressing Start, and a table full of
+half-finished sessions when the phone never comes back).
+
+## 2026-08-26 — A `study_sessions` row is written only once the block is over
+Because: `ended_at` is then `not null` for every row, so "how many minutes" is a
+plain sum with no open sessions to exclude and no clock-skew arithmetic on read.
+It also means the table never holds a session that did not happen. The cost is
+that a block abandoned mid-way logs nothing, which is the right answer: below
+`MIN_LOGGABLE_MS` (one minute) `loggableSpan` returns null and the block is
+thrown away rather than logged as a minute of nothing.
+Instead of: inserting on Start and updating on Stop, which needs a nullable
+`ended_at`, an "is it still running" state in the database, and a rule for what
+to do with the ones that never ended.
+
+## 2026-08-26 — `logStudySession` is idempotent on (workspace, `started_at`), with a unique index behind it
+Because: the browser decides when to write the row, and there are three ordinary
+ways for it to ask twice — a second tab with the same block in `localStorage`, a
+double tap on Stop, a request the browser retried after a flaky connection. Any
+of them would turn one 25-minute block into 50 logged minutes, and minutes are
+the entire output of this slice. The service returns the row it already wrote;
+`study_sessions_workspace_started_at_key` is the backstop that holds even if a
+future caller forgets to go through the service.
+Instead of: a client-generated idempotency key (one more thing the browser can
+get wrong) or trusting that the UI only ever calls once.
+
+## 2026-08-26 — `ended_at` is the moment the block *would* have ended, not wall-clock stop time
+Because: `ended_at - started_at` is then exactly the focused duration, which is
+what every query in `modules/study` sums. A block paused for a ten-minute coffee
+would otherwise count the coffee as thermodynamics. `loggableSpan` subtracts
+paused time once, in `lib/pomodoro.ts`, and the server re-checks the result:
+under a minute is refused, over `FOCUS_MINUTES` is refused, because both
+instants arrive from a browser and neither is trusted.
+Instead of: storing a separate `paused_ms` column (a second number that can
+disagree with the first two), or trusting the client's own minute count.
+
+## 2026-08-26 — `modules/study` runs slice 06's `checkLinks` on every write
+Because: `workspaceId` is never forgeable — every caller re-derives it from the
+session — but `courseId` and `unitId` come from two `<select>`s in the browser,
+and the `study_sessions` RLS policy only validates `workspace_id`. It was never
+asked to prove the course a row points at belongs to that workspace too. Three
+bugs of exactly this shape were found in slices 04, 05 and 06. One shared
+`checkLinks` inside the service means no call site can forget it, because no
+call site performs it. `modules/study/study-sessions.test.ts` asserts a foreign
+`courseId` and a foreign `unitId` are both refused and that nothing is written
+while refusing — with a service-role client, which bypasses RLS, so the check
+being in the service is the only reason those tests pass.
+Instead of: checking in the server action (one call site today, two tomorrow),
+or leaning on RLS, which cannot see the relationship between two tables.
+
+## 2026-08-26 — /focus is reached from the /today strip, not from a sixth nav column
+Because: the 2026-08-24 entry above measured the mobile bottom nav and recorded
+that five columns fit at 390px and "a *sixth* would not fit". That measurement
+did not change this week, and the sidebar and the bottom bar deliberately render
+one list so they cannot drift apart — so adding Focus to one means adding it to
+both. A timer is also not a place you browse to: you start it from the page you
+already opened at 7:45am, which is /today, and the strip that shows the minutes
+is the natural door to the thing that produces them. The precedent is
+`/settings/semester`, reachable from the calendar header for the same reason.
+Instead of: cramming a sixth 65px column onto a phone, dropping the unbuilt
+"Review" entry (slice 11 owns it and its route already exists), or leaving
+/focus reachable only by typing the URL.
+
+## 2026-08-26 — /today's strip shows exactly two numbers: minutes today and minutes this week
+Because: prompts/07-focus.md caps it — "do not build a stats dashboard. Two
+numbers on /today is enough for now" — and docs/DESIGN.md's "What not to build"
+already rules out statistics, streaks and charts. `getMinutesOnDate` and
+`getMinutesThisWeek` are the two reads; both go through `lib/study`'s pure
+`formatMinutes`, so '1h 25m' is spelled one way everywhere. The week starts on
+Monday because `lib/calendar`'s `WEEK_STARTS_ON` says so, and two screens
+disagreeing about which week it is would be worse than either answer. The strip
+sits under the header rather than at the foot of the page so the way in to
+/focus is visible without scrolling; /today's two real questions keep their
+order below it.
+Instead of: a per-course breakdown or a bar chart (`getMinutesThisWeekPerCourse`
+exists for slice 12's use, and is deliberately not rendered anywhere yet).
+
+## 2026-08-26 — The per-unit aggregation is done in memory over pure functions
+Because: `lib/study.ts` holds `sessionMinutes`, `minutesByCourse`,
+`minutesByUnit` and `formatMinutes` as plain functions over spans, with their
+own test and no database in sight — the same split as `lib/today.ts`,
+`lib/calendar.ts` and `lib/tasks.ts`. At one student's scale that is a few
+thousand rows a year and one query, and the arithmetic that can be silently
+wrong is the part that is tested. Three indexes on `study_sessions` are there to
+push it into SQL on the day that stops being true.
+Instead of: a Postgres view or `group by` in the repo, which would put the
+product's central claim — minutes per unit — somewhere no unit test can reach.
+
+## 2026-08-26 — One migration, no dependencies, in slice 07
+Because: `004_study.sql` creates `study_sessions` exactly as docs/SCHEMA.md
+specified it (this was the "Noticed, not fixed" item saying slice 01 skipped
+it), with RLS enabled and four policies in the same file. Nothing was installed:
+the timer is arithmetic on `Date.now()`, and the clock face is `padStart`.
+
 ---
 
 ## Noticed, not fixed
@@ -721,8 +826,10 @@ Things spotted outside the current slice. Do not fix them mid-slice; write them 
   CommonJS". Harmless today; fixed by adding `"type": "module"` to `package.json`
   or renaming the config to `.mts`. Left alone — it touches the whole project's
   module resolution and belongs in its own change.
-- `docs/SCHEMA.md` lists `study_sessions` under the semester layer. It is not in
-  slice 01's build list, so it was not created. Slice 07 (Focus) needs it.
+- ~~`docs/SCHEMA.md` lists `study_sessions` under the semester layer. It is not in
+  slice 01's build list, so it was not created. Slice 07 (Focus) needs it.~~
+  **Fixed in slice 07** — `supabase/migrations/004_study.sql` creates it, with
+  RLS and four policies.
 - `docs/DESIGN.md` contradicts itself on the type floor. The Type section says
   "never smaller than 12px anywhere"; the Measurements section then specifies
   12.5px course names, 11.5px room/time, and 11px mono gutter and uppercase
@@ -806,6 +913,25 @@ Things spotted outside the current slice. Do not fix them mid-slice; write them 
   (`revalidatePath`). It is fast and needs no JavaScript, but the row does not
   tick until the round trip returns. An optimistic client row would feel better
   and would cost a `'use client'` on something that currently does not need one.
+- The timer lives in one browser's `localStorage`. Starting a block on the
+  laptop and finishing it on the phone does not work — the phone sees no block
+  running. Correct for a single user with one device at a time, and fixing it
+  properly means an open row in the database, which the decision above
+  deliberately rejected. Worth revisiting only if it actually bites.
+- A focus block that is logged and then navigated away from can never be rated.
+  `setFocusRating` handles null and the row is perfectly editable, but the only
+  place the question is asked is the card that appears immediately after the
+  block ends. There is no history screen on /focus to go back to — and there
+  should not be one yet (prompts/07-focus.md: no stats dashboard). If the rating
+  turns out to be worth anything in slice 12, it needs somewhere to live.
+- `/focus` is not in the bottom nav (see the decision above). If it turns out to
+  be a daily destination rather than something started from /today, the nav
+  needs a real rethink — six columns measured properly, or a "more" affordance —
+  and `/settings/*` is waiting behind the same question.
+- `getUnitStudy` reads every session in the workspace and aggregates in memory.
+  Deliberate (see the decision above) and correct at a few thousand rows a year,
+  but it is the read slice 12 leans on hardest, so it is the first one that will
+  want pushing into SQL.
 - `components/today/task-row.tsx` and `components/tasks/task-item.tsx` are now
   two rows that look nearly the same. They differ in what they show (one is a
   seven-day view with no edit affordance) and merging them would mean one

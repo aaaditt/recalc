@@ -405,6 +405,61 @@ export type Database = {
           },
         ]
       }
+      study_sessions: {
+        Row: {
+          course_id: string
+          created_at: string
+          ended_at: string
+          focus_rating: number | null
+          id: string
+          started_at: string
+          unit_id: string | null
+          workspace_id: string
+        }
+        Insert: {
+          course_id: string
+          created_at?: string
+          ended_at: string
+          focus_rating?: number | null
+          id?: string
+          started_at: string
+          unit_id?: string | null
+          workspace_id: string
+        }
+        Update: {
+          course_id?: string
+          created_at?: string
+          ended_at?: string
+          focus_rating?: number | null
+          id?: string
+          started_at?: string
+          unit_id?: string | null
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "study_sessions_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "study_sessions_unit_id_fkey"
+            columns: ["unit_id"]
+            isOneToOne: false
+            referencedRelation: "syllabus_units"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "study_sessions_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       syllabus_units: {
         Row: {
           block_id: string | null
