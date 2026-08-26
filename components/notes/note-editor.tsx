@@ -52,10 +52,22 @@ type NoteEditorProps = {
     sourceBlockId: string | null;
     dueAt: string | null;
   }) => Promise<void>;
+  /**
+   * Store an image pasted or dropped into the note. Omit it and pasting an
+   * image does nothing, exactly as it did before slice 09.
+   *
+   * The editor still knows nothing about files, Drive or the database: it hands
+   * over a FormData with one `image` field and says where it went. Small images
+   * go to Supabase Storage rather than Drive (prompts/09-drive.md point 6) —
+   * that routing is decided server-side, in lib/files.ts.
+   */
+  saveImage?: (formData: FormData) => Promise<void>;
 };
 
-export function NoteEditor({ docId, nodes, save, makeTask }: NoteEditorProps) {
+export function NoteEditor({ docId, nodes, save, makeTask, saveImage }: NoteEditorProps) {
   const [status, setStatus] = useState<Status>('clean');
+  // What just happened to a pasted picture. One line, then it goes away.
+  const [imageNote, setImageNote] = useState<string | null>(null);
   // Non-empty while there is text selected, so the "Task" button knows whether
   // it has anything to work on.
   const [selected, setSelected] = useState('');
@@ -109,6 +121,45 @@ export function NoteEditor({ docId, nodes, save, makeTask }: NoteEditorProps) {
     [flush]
   );
 
+  // The save function is held in a ref for the same reason `save` is: the
+  // editor is built once, and the bound server action changes identity on
+  // every render of the page above it.
+  const saveImageRef = useRef(saveImage);
+  useEffect(() => {
+    saveImageRef.current = saveImage;
+  }, [saveImage]);
+
+  /**
+   * A pasted or dropped picture.
+   *
+   * Returns true when it took the file, which is what stops ProseMirror also
+   * inserting whatever it made of the clipboard.
+   */
+  const takeImages = useCallback((files: FileList | null | undefined): boolean => {
+    const send = saveImageRef.current;
+    if (!send || !files || files.length === 0) return false;
+
+    const images = [...files].filter((file) => file.type.startsWith('image/'));
+    if (images.length === 0) return false;
+
+    setImageNote(images.length === 1 ? 'Saving image…' : `Saving ${images.length} images…`);
+
+    void (async () => {
+      try {
+        for (const image of images) {
+          const form = new FormData();
+          form.set('image', image);
+          await send(form);
+        }
+        setImageNote('Saved to this lecture’s files.');
+      } catch {
+        setImageNote('That image did not save. It may be too big for a note.');
+      }
+    })();
+
+    return true;
+  }, []);
+
   const editor = useEditor({
     // The server renders the page; the editor mounts after hydration.
     immediatelyRender: false,
@@ -129,6 +180,11 @@ export function NoteEditor({ docId, nodes, save, makeTask }: NoteEditorProps) {
     },
     editorProps: {
       attributes: { class: 'note-doc prose-note', spellcheck: 'true' },
+      // A screenshot or a photo of the board, pasted or dragged straight into
+      // the note. Returning true means ProseMirror leaves the clipboard alone.
+      handlePaste: (_view, event) => takeImages(event.clipboardData?.files),
+      handleDrop: (_view, event) =>
+        takeImages((event as DragEvent).dataTransfer?.files),
     },
     onUpdate: ({ editor: current }) => {
       pending.current = current.getJSON().content ?? [];
@@ -210,6 +266,12 @@ export function NoteEditor({ docId, nodes, save, makeTask }: NoteEditorProps) {
       </div>
 
       <EditorContent editor={editor} />
+
+      {imageNote ? (
+        <p aria-live="polite" className="pt-2 text-12 text-muted">
+          {imageNote}
+        </p>
+      ) : null}
 
       {makeTask ? (
         <TaskFromSelection

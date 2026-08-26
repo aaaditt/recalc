@@ -5,6 +5,20 @@ import { z } from 'zod';
 const publicSchema = z.object({
   NEXT_PUBLIC_SUPABASE_URL: z.url(),
   NEXT_PUBLIC_SUPABASE_ANON_KEY: z.string().min(1),
+  // The Google Picker's developer key. Genuinely public — it identifies the
+  // Cloud project to the Picker and grants nothing on its own; the OAuth token
+  // is what grants access, and that never comes from here.
+  //
+  // Optional, because everything in the app has to work with no Drive account
+  // connected. Without it the "Attach from Drive" button says so in a plain
+  // sentence instead of the page failing to boot.
+  //
+  // An empty value is the same as an absent one: `.env.local` ships the key
+  // commented in but blank, and `FOO=` must not be an invalid environment.
+  NEXT_PUBLIC_GOOGLE_PICKER_API_KEY: z
+    .string()
+    .optional()
+    .transform((value) => (value && value.trim() !== '' ? value : undefined)),
 });
 
 // NEXT_PUBLIC_* vars are replaced at build time, so they must be referenced
@@ -12,6 +26,7 @@ const publicSchema = z.object({
 const parsed = publicSchema.safeParse({
   NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
   NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+  NEXT_PUBLIC_GOOGLE_PICKER_API_KEY: process.env.NEXT_PUBLIC_GOOGLE_PICKER_API_KEY,
 });
 
 if (!parsed.success) {

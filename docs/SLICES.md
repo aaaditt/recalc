@@ -14,7 +14,7 @@ column as you go — this is how a fresh session knows where we are.
 | 06 | Tasks — CRUD, linked to courses, units and lectures | done |
 | 07 | Focus — Pomodoro logged against a syllabus unit | done |
 | 08 | Syllabus — ordered units, status, progress | done |
-| 09 | Google Drive — connect, picker, attach files to lectures | not started |
+| 09 | Google Drive — connect, picker, attach files to lectures | done |
 | 10 | Agents — BYOK settings, encrypted keys, role registry | not started |
 | 11 | **Recalc engine** — derivations, first recipe, /review queue | not started |
 | 12 | **Questions** — ask-about-selection, open questions per course | not started |
@@ -35,6 +35,11 @@ column as you go — this is how a fresh session knows where we are.
 - **10 before 11** because the engine needs a model to call.
 - **11 and 12 are the product.** Everything before them is groundwork.
 - **14 and 15 last** — most fragile, least payoff per hour.
+
+Slice 09 needs one thing done by hand before its definition of done can be
+checked: a Google Cloud project, an OAuth client and a Picker API key.
+`docs/GOOGLE_SETUP.md` has the exact steps. Everything in the app renders and
+works without it — Drive attachment is what is missing until it is done.
 
 ## If you run out of steam
 

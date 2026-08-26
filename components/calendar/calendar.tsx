@@ -325,6 +325,12 @@ export function Calendar(props: CalendarProps) {
             >
               Semester
             </Link>
+            <Link
+              href="/settings/drive"
+              className="text-13 text-muted underline-offset-4 hover:text-ink hover:underline"
+            >
+              Drive
+            </Link>
           </>
         }
       />

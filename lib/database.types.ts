@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.15"
+    PostgrestVersion: "14.17"
   }
   graphql_public: {
     Tables: {
@@ -304,6 +304,119 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      files: {
+        Row: {
+          block_id: string | null
+          course_id: string | null
+          created_at: string
+          id: string
+          meeting_id: string | null
+          mime_type: string | null
+          name: string
+          provider: string
+          provider_id: string
+          size_bytes: number | null
+          thumbnail_link: string | null
+          web_view_link: string | null
+          workspace_id: string
+        }
+        Insert: {
+          block_id?: string | null
+          course_id?: string | null
+          created_at?: string
+          id?: string
+          meeting_id?: string | null
+          mime_type?: string | null
+          name: string
+          provider: string
+          provider_id: string
+          size_bytes?: number | null
+          thumbnail_link?: string | null
+          web_view_link?: string | null
+          workspace_id: string
+        }
+        Update: {
+          block_id?: string | null
+          course_id?: string | null
+          created_at?: string
+          id?: string
+          meeting_id?: string | null
+          mime_type?: string | null
+          name?: string
+          provider?: string
+          provider_id?: string
+          size_bytes?: number | null
+          thumbnail_link?: string | null
+          web_view_link?: string | null
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "files_block_id_fkey"
+            columns: ["block_id"]
+            isOneToOne: false
+            referencedRelation: "blocks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "files_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "files_meeting_id_fkey"
+            columns: ["meeting_id"]
+            isOneToOne: false
+            referencedRelation: "class_meetings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "files_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      google_accounts: {
+        Row: {
+          address: string
+          created_at: string
+          granted_scopes: string[]
+          id: string
+          last_history_id: string | null
+          refresh_token_enc: string
+          status: string
+          synced_at: string | null
+          user_id: string
+        }
+        Insert: {
+          address: string
+          created_at?: string
+          granted_scopes?: string[]
+          id?: string
+          last_history_id?: string | null
+          refresh_token_enc: string
+          status?: string
+          synced_at?: string | null
+          user_id: string
+        }
+        Update: {
+          address?: string
+          created_at?: string
+          granted_scopes?: string[]
+          id?: string
+          last_history_id?: string | null
+          refresh_token_enc?: string
+          status?: string
+          synced_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
       }
       sessions: {
         Row: {

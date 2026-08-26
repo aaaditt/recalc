@@ -4,10 +4,16 @@ import type { ReactNode } from 'react';
 
 import {
   addLectureTaskAction,
+  attachDriveFilesAction,
+  prepareDriveUploadAction,
+  removeLectureFileAction,
+  saveLectureImageAction,
   saveLectureNoteAction,
   setLectureUnitAction,
 } from './actions';
 import { toggleTaskDoneAction } from '../../tasks/actions';
+import { AttachFiles } from '@/components/files/attach-files';
+import { FileGrid } from '@/components/files/file-grid';
 import { NoteEditor } from '@/components/notes/note-editor';
 import { TaskItem } from '@/components/tasks/task-item';
 import { Card } from '@/components/ui/card';
@@ -15,10 +21,14 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Pill } from '@/components/ui/pill';
 import { dayTitle, timeRange } from '@/lib/calendar';
 import { colourForCourse, courseDot } from '@/lib/course-colours';
+import { publicEnv } from '@/lib/env';
+import { recalcFolderPath } from '@/lib/files';
 import { createClient } from '@/lib/supabase/server';
 import { dueLabel, isOverdue } from '@/lib/tasks';
 import { localDateKey, localTimeZone, todayIn } from '@/lib/time';
 import { getCourses, getMeeting, getSyllabusUnits } from '@/modules/courses';
+import { getFilesForMeeting } from '@/modules/files';
+import { getGoogleAccount } from '@/modules/google';
 import { getNoteDocument } from '@/modules/notes';
 import { getTasksForMeeting } from '@/modules/tasks';
 import { ensureWorkspace } from '@/modules/workspaces';
@@ -63,12 +73,16 @@ export default async function LecturePage({
   const course = index === -1 ? null : courses[index];
   const colour = colourForCourse(course?.colour, Math.max(index, 0));
 
-  const [units, note, tasks] = await Promise.all([
+  const [units, note, tasks, files, google] = await Promise.all([
     course ? getSyllabusUnits(supabase, course.id) : Promise.resolve([]),
     meeting.note_block_id
       ? getNoteDocument(supabase, workspace.id, meeting.note_block_id)
       : Promise.resolve(null),
     getTasksForMeeting(supabase, workspace.id, meeting.id),
+    getFilesForMeeting(supabase, workspace.id, meeting.id),
+    // Reading the connection is a plain table read — it never touches Google —
+    // so a lecture page still renders instantly with Drive down or absent.
+    getGoogleAccount(supabase, user.id),
   ]);
 
   const today = todayIn(zone);
@@ -81,6 +95,9 @@ export default async function LecturePage({
   );
   const cancelled = meeting.status === 'cancelled';
   const setUnit = setLectureUnitAction.bind(null, meeting.id);
+
+  const saveImage = saveLectureImageAction.bind(null, meeting.id);
+  const removeLectureFile = removeLectureFileAction.bind(null, meeting.id);
 
   return (
     <>
@@ -120,20 +137,29 @@ export default async function LecturePage({
           nodes={note?.nodes ?? []}
           save={saveLectureNoteAction.bind(null, meeting.id)}
           makeTask={addLectureTaskAction.bind(null, meeting.id)}
+          saveImage={saveImage}
         />
         <p className="pt-2 text-12 text-muted">
           Select a sentence and press <span className="font-mono">＋ Task</span> to turn it
-          into a deadline that remembers where it came from.
+          into a deadline that remembers where it came from. Paste a screenshot and it
+          lands in Files below.
         </p>
       </Section>
 
       <Section label="Files">
-        <Card>
-          <EmptyState
-            title="No files yet"
-            description="Slides, a photo of the whiteboard, the problem sheet. Attaching them arrives with Google Drive in slice 09."
+        <div className="flex flex-col gap-3">
+          <FileGrid files={files} remove={removeLectureFile} />
+
+          <AttachFiles
+            connected={google !== null}
+            needsReconnect={google !== null && !google.canUseDrive}
+            developerKey={publicEnv.NEXT_PUBLIC_GOOGLE_PICKER_API_KEY ?? null}
+            folderPath={recalcFolderPath(course?.code ?? null)}
+            prepare={prepareDriveUploadAction.bind(null, meeting.id)}
+            attach={attachDriveFilesAction.bind(null, meeting.id)}
+            saveImage={saveImage}
           />
-        </Card>
+        </div>
       </Section>
 
       <Section label="Questions">

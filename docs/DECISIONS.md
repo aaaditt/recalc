@@ -922,6 +922,188 @@ index that would have been worth adding, `(course_id, position)`, cannot be
 (see the renumbering decision above). Nothing was installed: reordering is two
 arrows and an array swap.
 
+## 2026-08-27 — The encryption helper is `lib/crypto.ts`, pulled forward out of slice 10
+Because: prompts/09-drive.md says to store the Google refresh token "encrypted
+with `modules/agents/crypto.ts`" — and that module belongs to slice 10, which has
+not been built. Slice 09 needed it first, and reaching across a boundary into a
+module that does not exist yet is not a thing. It also owns no table, so by
+CLAUDE.md's layout it was never a module: `/lib` is for "db clients, env
+validation, shared utils", and AES-256-GCM over an opaque string is the third of
+those. It reads `process.env.ENCRYPTION_KEY` directly rather than through
+`lib/env.server.ts`, because that file imports `server-only`, whose default
+export throws outside a React Server Component — anything importing it cannot be
+unit-tested (the same reason `scripts/seed-check.ts` builds its own Supabase
+client). `lib/env.server.ts` still validates the variable, so a missing key fails
+at boot, not at the moment a token is written. **Slice 10 imports this for
+`agent_profiles.api_key_enc`; it does not write a second one.** The format is
+`v1.<iv>.<tag>.<ciphertext>`, versioned so a future algorithm change is
+detectable rather than a silent garbling. `lib/crypto.test.ts` proves the
+round-trip and proves that a flipped byte anywhere — ciphertext, tag, iv — or the
+wrong key refuses to decrypt at all.
+Instead of: building slice 10's module early (rule 9 forbids it, and the agents
+module is a role registry and a BYOK settings screen, none of which this slice
+needs), or storing the refresh token in the clear until slice 10 arrives.
+
+## 2026-08-27 — `drive.file` is the only scope, and there is a test that says so
+Because: docs/SCHEMA.md and prompts/09-drive.md both make this a hard constraint
+rather than a preference — `drive.file` is non-sensitive, needs only basic OAuth
+verification, and grants access *only* to files handed over through the Picker or
+created by this app. `drive.readonly` and `drive` are restricted, grant the entire
+Drive, and trigger a security assessment. Written down, that rule lasts until the
+first slice where a wider scope would be convenient, so
+`modules/google/drive-scope.test.ts` reads the authorize URL this app builds and
+fails if any of the four wider Drive scopes ever appears in it. The connected
+account's email address is read from `drive/v3/about`, which `drive.file` can
+already answer — so not even an `email` or `profile` scope is requested.
+Instead of: adding `userinfo.email` to learn the address (a second scope on the
+consent screen for one string), or trusting a comment to hold the line.
+
+## 2026-08-27 — Plain `fetch` against Google's REST APIs, no `googleapis` SDK
+Because: this slice makes six kinds of HTTP call — token exchange, token refresh,
+revoke, `about.get`, `files.get`/`files.list`/`files.create`, and a download. The
+`googleapis` package is tens of megabytes of generated clients for all of Google,
+and CLAUDE.md asks for boring, minimal code. Every endpoint used is documented and
+stable. Nothing was installed for the Picker either: it is a `<script>` from
+apis.google.com and about forty lines of loader in
+`components/files/drive-client.ts`, with a hand-written type for the five methods
+actually called.
+Instead of: `googleapis` (a very large dependency for a handful of REST calls) or
+a typed picker wrapper from npm (a package to avoid writing one interface).
+
+## 2026-08-27 — The browser uploads to Drive directly; the app never sees the bytes
+Because: a slide deck is routinely 10–40MB, and a Server Action's request body is
+capped (1MB by default, and 4.5MB on Vercel regardless). Routing a deck through
+this app would mean a size limit that has nothing to do with Drive, plus a
+megabyte-scale buffer in a serverless function. The browser already needs a
+`drive.file` access token for the Picker, so it uses the same token to `POST` to
+Google's upload endpoint — multipart in one request under 5MB, resumable above it
+— and then sends the app nothing but the resulting **file id**. Every other fact
+about the file (name, mime type, size, links) is read back from Drive server-side,
+so a forged form cannot put a made-up filename on a lecture page. It is also
+docs/SCHEMA.md's "store the reference, never the bytes" taken literally: the bytes
+never touch this app at all, in either direction, except when streaming one back
+for the in-place viewer.
+Instead of: a `/api/upload` route (a body limit and a buffer for no benefit), or
+raising `bodySizeLimit` far enough for a 40MB deck (which is a limit on *every*
+action, not just this one).
+
+## 2026-08-27 — A short-lived Drive access token is deliberately handed to the browser
+Because: the Google Picker exists only as browser JavaScript, and the Picker is
+the thing that *grants* `drive.file` access to a file — without it the scope can
+only ever see files this app created. `PickerBuilder.setOAuthToken` is not
+optional. CLAUDE.md's Never rule 4 says no API key, service-role key or OAuth
+token in a file containing `'use client'` or under `/components`, and that holds
+exactly: `components/files/drive-client.ts` contains no credential, and none is in
+the bundle. The token is minted by a Server Action at the moment of the click,
+lives about an hour, is scoped to `drive.file` alone, and is used and dropped —
+never written to a file, a cookie or `localStorage`. The refresh token and the
+client secret never leave the server, and the refresh token is encrypted even
+there.
+Instead of: a server-rendered file browser (which would need `drive.readonly` to
+list anything — the restricted scope this whole design exists to avoid).
+
+## 2026-08-27 — Every write in `modules/files` runs one shared `checkLinks`
+Because: `files` is the sixth table in a row whose writes take an id from the
+browser — `courseId`, `meetingId` and `blockId` all come from the page the attach
+button was pressed on — and the RLS policy validates `workspace_id` and nothing
+else. The five before it each shipped this bug once (`createOneOffMeeting` in 04,
+`createStandaloneNote` in 05, `modules/tasks` in 06, `modules/study` in 07,
+`modules/courses`'s syllabus writes in 08 — all above). So the check is inside the
+service, not at the call sites: no call site can forget it because no call site
+performs it. It runs *before* the module asks Google anything, which
+`file-attachments.test.ts` asserts explicitly — otherwise a foreign lecture id
+would fail with "no Google account" and the error itself would leak which Drive
+file ids exist. `Recalc/<course code>/` is built from a code read out of the
+lecture's own row (`courseCodeForMeeting`), never from a form, so an upload cannot
+be aimed at another course's folder.
+Instead of: a check per server action (four actions, four chances to forget), or
+leaning on RLS, which cannot see the relationship between two tables and is not in
+the picture at all for a service-role caller.
+
+## 2026-08-27 — Small pasted images go to Supabase Storage, and `storeFor` is the one place that decides
+Because: prompts/09-drive.md point 6 — "Drive is for files I would want to find in
+Drive". A screenshot pasted mid-lecture is not one of those. The routing rule is a
+pure function in `lib/files.ts` (`image/*` and ≤5MB → Supabase; everything else →
+Drive) with its own test, in the same tradition as `lib/today.ts`,
+`lib/calendar.ts`, `lib/tasks.ts`, `lib/study.ts` and `lib/syllabus.ts`. It is what
+makes pasting a photo of the whiteboard work with **no Drive account connected at
+all**, which the slice's "everything must still work" constraint requires. The
+bucket is private and objects are named `<workspace_id>/<uuid>.<ext>`, so the
+first path segment *is* the ownership check the Storage policy in migration 005
+runs, and the page gets a one-hour signed URL rather than the bucket being public.
+Those images do travel through a Server Action, so `next.config.ts` raises
+`bodySizeLimit` to 6MB — above the 5MB ceiling, and still small.
+Instead of: a public bucket (a private note's whiteboard photo on a guessable
+URL), or sending everything to Drive (a Drive full of `Screenshot 2026-08-27.png`,
+which is the thing point 6 exists to prevent).
+
+## 2026-08-27 — A pasted image lands in the lecture's Files, not inside the note document
+Because: TipTap's StarterKit has no image node, so rendering one inline would mean
+a new extension, a schema change to how `plainTextOf` walks the document, and a
+way for a private signed URL to be re-signed every time the note is read — three
+things that all touch the staleness invariant, in a slice that is about files. So
+`NoteEditor` gained one optional `saveImage` prop, keeps knowing nothing about
+files or the database (it posts a `FormData` with one field), intercepts an image
+paste or drop, and says one line: "Saved to this lecture's files." The picture is
+one tile down the page. Booked below for a later pass.
+Instead of: an inline image node with a URL that expires an hour after the note
+was written, or refusing pasted images entirely.
+
+## 2026-08-27 — Remove-from-app and delete-from-Drive are separated by a sheet, not a tooltip
+Because: prompts/09-drive.md point 5 makes "the app never deletes a Drive file" a
+rule, and the only place it could be broken is `removeFile`. That function deletes
+the `files` row and stops; there is no Drive delete call anywhere in the codebase.
+The UI has to make that unmissable rather than merely true, so **Remove** opens a
+sheet that says the file stays in your Google Drive and that deleting it is
+something you do in Drive. The one case that is different is an image Recalc
+itself put in Supabase Storage: nothing else points at it and there is no bucket
+the user browses, so the object goes too — and the sheet says *that* instead.
+Instead of: a one-tap remove with the explanation in a `title` attribute (invisible
+on a phone, which is where this is used).
+
+## 2026-08-27 — Every Drive failure degrades to a sentence, and a missing thumbnail is not a failure
+Because: prompts/09-drive.md point 7 asks for exactly this. A revoked token is
+recognised by `invalid_grant` (or a 401 from Drive), flips
+`google_accounts.status` to `needs_reconnect` in the same breath, and every screen
+then says "Google Drive needs reconnecting" with a link to `/settings/drive` — one
+sentence in one place rather than five different failures. A file deleted in Drive
+comes back as a 404, and `/api/drive/[fileId]` answers with **plain text**, never
+an error page, so a broken tile cannot take the lecture page down with it; the
+viewer offers Remove. A missing thumbnail is not an error at all — the tile draws
+the file's extension instead, and the `<img>`'s `onError` falls back to the same
+thing when a thumbnail 404s after the page rendered. Offline is checked with
+`navigator.onLine` before any upload starts, because failing at the *end* of a
+40MB upload on a train is the worst version of this. Crucially, a lecture page
+never calls Google while rendering: it reads `files` and `google_accounts`, both
+plain table reads, so the page is instant and correct with Drive down, revoked, or
+never connected.
+Instead of: verifying every attached file against Drive on each render (a network
+call per file per page load, to learn something that is almost always unchanged).
+
+## 2026-08-27 — `google_accounts` is keyed by `user_id`; `files` is keyed by `workspace_id`
+Because: a Google account is a fact about the person, and docs/SCHEMA.md's column
+list says `user_id`. Its RLS policies are therefore `user_id = (select auth.uid())`
+rather than the workspace subquery every other table uses — the first table in the
+project to differ, and correct: `auth.users` is the only thing that outlives a
+workspace, and slice 14 attaches Gmail to the same row. `files` is workspace-scoped
+like everything else. `files.course_id`, `meeting_id` and `block_id` are all
+`on delete set null` rather than cascade, because losing a course must not destroy
+the record of a file that is still sitting in Drive.
+Instead of: a `workspace_id` on `google_accounts` for consistency's sake, which
+would mean reconnecting Google if a workspace were ever recreated.
+
+## 2026-08-27 — One migration, and no dependencies, in slice 09
+Because (rule 10): nothing was installed. Google is plain `fetch`, the Picker is a
+script tag, and the crypto is `node:crypto`. `supabase/migrations/005_drive.sql`
+creates `google_accounts` and `files` exactly as docs/SCHEMA.md specifies them,
+with RLS enabled and four policies each in the same file, plus the private
+`note-images` bucket and its four Storage policies. Two additions the schema doc
+does not spell out: a `check` constraining `provider` to `drive | supabase`, and a
+unique index on `(workspace_id, provider, provider_id, meeting_id, course_id,
+block_id) nulls not distinct` — the same deck attached to two lectures is
+legitimately two rows, but a double-tap on Attach must not make it two on one
+lecture. `nulls not distinct` needs Postgres 15+; this project is on 17.
+
 ---
 
 ## Noticed, not fixed
@@ -1065,6 +1247,71 @@ Things spotted outside the current slice. Do not fix them mid-slice; write them 
   syllabus off a PDF is therefore fourteen round trips. Pasting a whole list
   and splitting it on newlines would be one, and `createSyllabusUnit` already
   appends, so it is a small change — it just was not asked for.
+- **Slice 09's Google half could not be tested end to end in the session that
+  built it.** There were no real Google OAuth credentials on this machine, so no
+  live handshake was performed, the Google Picker was never opened, and no file
+  was ever uploaded to a real Drive. What *was* proved: the authorize URL asks
+  for `drive.file` and never a wider scope
+  (`modules/google/drive-scope.test.ts`); encryption round-trips and refuses a
+  tampered ciphertext (`lib/crypto.test.ts`); the routing rule and tile
+  formatting (`lib/files.test.ts`); every ownership refusal and the RLS backstop
+  against the real database, including as a signed-in anon-key user
+  (`modules/files/file-attachments.test.ts`); and — against the running app,
+  with a throwaway signed-in user since deleted — that `/settings/drive`,
+  `/lecture/[id]`, `/today`, `/calendar`, `/tasks`, `/notes`, `/courses` and
+  `/focus` all render correctly with no Drive account connected, that
+  `/api/auth/google/start` redirects to Google asking for `drive.file` only,
+  that a cancelled consent screen comes back as a plain sentence, and that
+  `/api/drive/[id]` answers in plain text rather than an error page.
+  **Aadit still owes the live pass**: `docs/GOOGLE_SETUP.md` step 8 is the
+  checklist, and until it is done the connect flow, the Picker, the upload path
+  and the `Recalc/<course code>/` folder are code that has never run against
+  Google.
+- `.env.local` holds **placeholder** `GOOGLE_CLIENT_ID` and
+  `GOOGLE_CLIENT_SECRET` (`replace-me…`) so the app boots and builds. They must
+  be replaced with real values from Google Cloud. `ENCRYPTION_KEY` was generated
+  for real and **must be backed up** — losing it makes every stored token and,
+  from slice 10, every stored API key unreadable.
+- **Deleting a workspace leaves its images in the `note-images` bucket.**
+  Supabase Storage has no foreign key to `workspaces`, so the cascade that
+  cleans out `files` cannot reach the objects. `removeFile` deletes the object
+  when a single image is removed, so this only bites when a whole workspace or
+  auth user goes — which today happens only in tests, and
+  `modules/files/file-attachments.test.ts` now sweeps the bucket in its own
+  teardown for exactly that reason. A proper fix is a trigger on
+  `workspaces` delete calling out to Storage, or a periodic sweep; both are
+  their own small piece of work and would need a second migration in this slice.
+- A pasted image lands in the lecture's Files grid rather than inline in the note
+  document (see the decision above). Rendering it in place needs a TipTap image
+  node, a rule for how `plainTextOf` treats it, and a way to re-sign the URL on
+  every read. Worth its own small piece of work; it is not a files problem.
+- `SETUP.md` section 3 still describes the Google Cloud setup, and now disagrees
+  with `docs/GOOGLE_SETUP.md` in small ways (it lists three APIs including Gmail,
+  and predates the exact redirect URI). Slice 09 wrote the new file rather than
+  editing the old one (rule 9). Worth reducing section 3 to a pointer some day.
+- The Drive folder lookup only ever finds folders this app created — that is what
+  `drive.file` means. A `Recalc` folder made by hand in Drive is invisible to
+  Recalc, so it would create a second one beside it. Correct, and a real
+  consequence of the scope; the alternative is asking for the whole Drive.
+  Worth a line in the setup doc if it ever confuses anyone.
+- `getDriveAccessToken` refreshes the token on every operation rather than
+  caching it. That is one extra round trip to Google per attach, upload or
+  preview. Deliberate — a cached credential with a lifetime nobody tracks is
+  worse than a round trip — but if the file grid ever gets slow, the thumbnails
+  are what to look at: each one is its own request through
+  `/api/drive/[fileId]`, and each mints its own token.
+- Attached files are not checked against `isHandEdited` in
+  `modules/courses.generateMeetings`. The 2026-08-24 decision on that said
+  "`files` is not checked yet — the table lands in slice 09... Add the check when
+  the files module exists." The table now exists. It was not added here because
+  it is a change to `modules/courses`, not `modules/files` (rule 9), and in
+  practice a file is always attached from a lecture page that also writes
+  `note_block_id` — so the meeting is already protected. Worth closing properly
+  the next time the calendar is opened.
+- Nothing lists files at the *course* level. `getFilesForCourse` and
+  `getFilesForBlock` exist and are tested through the module, but no screen calls
+  them — `/courses/[id]` has no Files section. The slice asked for the lecture
+  page and that is what was built.
 - `components/today/task-row.tsx` and `components/tasks/task-item.tsx` are now
   two rows that look nearly the same. They differ in what they show (one is a
   seven-day view with no edit affordance) and merging them would mean one
