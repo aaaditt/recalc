@@ -15,7 +15,7 @@ column as you go — this is how a fresh session knows where we are.
 | 07 | Focus — Pomodoro logged against a syllabus unit | done |
 | 08 | Syllabus — ordered units, status, progress | done |
 | 09 | Google Drive — connect, picker, attach files to lectures | done |
-| 10 | Agents — BYOK settings, encrypted keys, role registry | not started |
+| 10 | Agents — BYOK settings, encrypted keys, role registry | done |
 | 11 | **Recalc engine** — derivations, first recipe, /review queue | not started |
 | 12 | **Questions** — ask-about-selection, open questions per course | not started |
 | 13 | Search — pgvector over versioned embeddings | not started |
@@ -40,6 +40,11 @@ Slice 09 needs one thing done by hand before its definition of done can be
 checked: a Google Cloud project, an OAuth client and a Picker API key.
 `docs/GOOGLE_SETUP.md` has the exact steps. Everything in the app renders and
 works without it — Drive attachment is what is missing until it is done.
+
+Slice 10 needs the same kind of thing: a real Anthropic, Google or OpenAI API
+key pasted into `/settings/agents`. Every screen renders and every test passes
+without one, but "Test connection" has never been run against a live provider —
+see the last entry under "Noticed, not fixed" in `docs/DECISIONS.md`.
 
 ## If you run out of steam
 

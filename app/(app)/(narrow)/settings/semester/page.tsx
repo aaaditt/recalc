@@ -43,12 +43,23 @@ export default async function SemesterPage({
         title="Semester"
         subtitle="Expand your weekly timetable into this term's lectures."
         actions={
-          <Link
-            href="/calendar"
-            className="text-13 text-muted underline-offset-4 hover:text-ink hover:underline"
-          >
-            Calendar
-          </Link>
+          <>
+            {/* The way in to slice 10's screen. The bottom nav is full at five
+                columns (docs/DECISIONS.md), so settings screens link to each
+                other rather than growing a sixth destination. */}
+            <Link
+              href="/settings/agents"
+              className="text-13 text-muted underline-offset-4 hover:text-ink hover:underline"
+            >
+              Agents
+            </Link>
+            <Link
+              href="/calendar"
+              className="text-13 text-muted underline-offset-4 hover:text-ink hover:underline"
+            >
+              Calendar
+            </Link>
+          </>
         }
       />
 

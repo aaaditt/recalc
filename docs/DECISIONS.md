@@ -1104,6 +1104,183 @@ block_id) nulls not distinct` — the same deck attached to two lectures is
 legitimately two rows, but a double-tap on Attach must not make it two on one
 lecture. `nulls not distinct` needs Postgres 15+; this project is on 17.
 
+## 2026-08-27 — Slice 10 reuses `lib/crypto.ts` instead of building `modules/agents/crypto.ts`
+Because: prompts/10-agents.md step 2 asks for `modules/agents/crypto.ts` doing
+AES-256-GCM over `ENCRYPTION_KEY`, storing iv + authTag + ciphertext, with a
+known-plaintext round-trip test. That file already exists, at `lib/crypto.ts`,
+pulled forward during slice 09 — and the decision that pulled it forward says in
+so many words: "**Slice 10 imports this for `agent_profiles.api_key_enc`; it
+does not write a second one.**" A second AES-GCM implementation is exactly the
+duplication that decision was written to prevent: two ciphertext formats, two
+key parsers, and a day when one of them is fixed and the other is not. It is a
+plain shared util in `/lib` with no table of its own, so importing it from
+`modules/agents/registry.ts` is not a module-boundary crossing (Never rule 1
+governs `@/modules/*/*`, not `@/lib/*`).
+Instead of: a byte-identical copy under `modules/agents/`, or moving
+`lib/crypto.ts` into the module — which would break `modules/google`, whose
+refresh token encryption has been using it since slice 09.
+
+## 2026-08-27 — `agent_profiles` is keyed by `user_id`, like `google_accounts` and unlike everything else
+Because: docs/SCHEMA.md names the column and the rule — "unique per user+role" —
+and it is right for the same reason slice 09's `google_accounts` was: an API key
+is a fact about the person, `auth.users` is the only thing that outlives a
+workspace, and re-creating a workspace must not mean fetching three keys out of
+a password manager again. Its RLS policies are therefore
+`user_id = (select auth.uid())` rather than the workspace subquery the other ten
+tables use. The knock-on is that `/settings/agents`' actions and /today's
+onboarding check re-derive a **user id** from the session where every other
+screen re-derives a workspace id.
+Instead of: a `workspace_id` for consistency's sake, which would contradict
+docs/SCHEMA.md and make the keys disposable along with the workspace.
+
+## 2026-08-27 — Migration 006 adds `key_hint` and `updated_at`, which SCHEMA.md does not list
+Because: the settings screen has to show *which* key is saved
+(prompts/10-agents.md: "Keys are shown masked after saving"), and the only two
+ways to do that are to decrypt on every page render or to keep a few characters
+in the clear. `key_hint` is the last four characters, which cannot call
+anything, and it means **rendering a page never touches the plaintext at all** —
+the key is decrypted at exactly one moment, when a provider is about to be
+called. `updated_at` exists because re-pasting a key updates the row, so
+`created_at` would go stale and the screen could not say when the key last
+changed. Both are the same class of addition as migration 002's four guards and
+005's provider check.
+Instead of: decrypting three rows to draw a settings page (a page render that
+handles secrets is a page render that can leak them), or a `masked_key` column
+holding the whole display string (the same data, pre-formatted, so the format
+can never change).
+
+## 2026-08-27 — `modules/agents/registry.ts` is the only file in the codebase that imports a provider SDK, and a test says so
+Because: CLAUDE.md's Never rule 6 and prompts/10-agents.md's constraint are both
+rules that hold until the first slice where breaking them is convenient — unless
+something fails. `modules/agents/no-provider-sdk.test.ts` reads every source
+file under `app`, `components`, `lib`, `modules` and `scripts` and fails if
+`@ai-sdk/*`, `@anthropic-ai/sdk`, `openai` or `ai` is imported anywhere but this
+module; it also fails if a `'use client'` file or anything under `/components`
+imports `@/modules/agents` or `@/lib/crypto`, or if `api_key_enc` is named
+outside the module that owns the table. It is the same enforcement shape
+`lib/design-tokens.test.ts` uses for rule 7, and it has a third test that fails
+if the registry itself *stops* importing the providers — otherwise the suite
+would pass on a codebase that reaches no model at all.
+Instead of: a comment saying so, or trusting the lint rule, which knows about
+module boundaries but nothing about which package a file may reach.
+
+## 2026-08-27 — `registry.ts` does not `import 'server-only'`, even though it decrypts keys
+Because: `server-only`'s default export throws outside a React Server Component,
+so anything importing it cannot be unit-tested — the same reason `lib/crypto.ts`
+leaves it out and `scripts/seed-check.ts` builds its own Supabase client
+(docs/DECISIONS.md, above). The routing this file does — role in, configured
+model out — is precisely the part that can be silently wrong, and
+`registry.test.ts` proves it with no database, no network and no real API key.
+The guarantee `server-only` would have given is kept by the tree-reading test
+above instead, which is strictly stronger: it fails on a `'use client'` file that
+*imports* this module, rather than on a runtime that happens to reach it. The
+production bundle was checked directly too — `.next/static` contains no
+occurrence of `api_key_enc`, `decryptSecret`, `ENCRYPTION_KEY`, `createAnthropic`
+or `x-api-key`.
+Instead of: `import 'server-only'` and an untested registry, which trades the
+part that is provable for the part that already is.
+
+## 2026-08-27 — The model list is a menu, not a whitelist
+Because: prompts/10-agents.md's definition of done ends "switch the provider to
+Gemini and have it still work without any code change", and a provider ships a
+model far more often than this app ships a slice. So `MODEL_CHOICES` in
+`modules/agents/schema.ts` is three suggestions per provider that fill the
+`<select>`, and every role form also has an "or type a model id" box that
+overrides it. `chatModelFor` passes whatever string it is given straight to the
+provider SDK. That keeps Never rule 6 honest in the strong sense: the only place
+a model name is *chosen* is a row the user typed, and the list exists so the
+picker is not empty.
+Instead of: a zod enum of known model ids (a build to change a model), or a free
+text field with no suggestions (a screen that asks you to remember
+`text-embedding-3-small` exactly).
+
+## 2026-08-27 — Anthropic cannot fill the `embed` role, and the screen never offers it
+Because: Anthropic publishes no embedding model —`@ai-sdk/anthropic` types its
+`textEmbeddingModel` as returning `never`. `providersForRole('embed')` therefore
+returns Google and OpenAI only, `saveAgentProfile` refuses the combination
+server-side, and `embedModelFor` refuses it a third time with a sentence rather
+than letting a request go out and fail at the provider. Three layers because the
+first is a `<select>` in a browser and the second is a public POST endpoint.
+Instead of: letting it be picked and failing at call time in slice 13, which is
+three slices away from the screen where the mistake was made.
+
+## 2026-08-27 — A blank key field means "keep the key already saved", but only when the provider is unchanged
+Because: changing `fast` from `claude-opus-5` to `claude-haiku-4-5` should not
+mean opening a password manager. The key field is optional when a row already
+exists for that role *with that provider*; switching provider requires a new key,
+because a Claude key cannot call Gemini and silently reusing it would produce a
+401 that looks like a bug. The service enforces both halves, so the rule holds
+for any caller, not just the form.
+Instead of: always requiring the key (a paste every time a model id changes), or
+always keeping it (a provider switch that fails at the provider with a message
+about authentication rather than about the thing that was actually wrong).
+
+## 2026-08-27 — Every failure in `testAgentConnection` is a returned sentence, never a throw
+Because: prompts/10-agents.md asks for a button that "reports plainly whether it
+worked", and its constraint says a missing or invalid key must degrade rather
+than crash. So a missing row, an unreadable ciphertext, a wrong key, a model id
+the provider has never heard of and a dead network all come back as
+`{ ok: false, detail }` with one line. `safeMessage` scrubs the key out of that
+line **by value** — OpenAI's 401 body echoes the key back — and then anything
+else key-shaped **by shape**, before truncating to one short sentence. The
+missing-row and unreadable-key cases return before a model is even built, which
+`agent-profiles.test.ts` asserts, so a Test connection press on an empty role
+makes no network call at all. `AgentNotConfigured` and `AgentKeyUnreadable` are
+named error classes rather than strings, so slice 11 can catch the right one.
+Instead of: letting the provider's error reach a screen (which is how a pasted
+key ends up in a screenshot), or a generic "something went wrong" (which is
+useless at 11pm when the answer is "you typo'd the model id").
+
+## 2026-08-27 — `/settings/agents` is reached from the other two settings screens
+Because: the mobile bottom nav was measured at five columns in slice 03 and
+recorded as full — "a *sixth* would not fit" — and slices 07 and 08 both
+followed that measurement rather than re-litigating it. So `/settings/agents`
+takes the same door `/settings/semester` and `/settings/drive` already use: a
+small link in the other settings screens' headers, plus the one quiet line on
+/today while no `fast` model exists. Both of the other settings screens are
+themselves reachable from the calendar header and a lecture page.
+Instead of: a sixth 65px column on a 390px phone, or a settings section with its
+own nav, which is a bigger piece of work than this slice and would belong to
+whichever slice finally rethinks the nav (booked below).
+
+## 2026-08-27 — The /today prompt is neutral, not accent
+Because: docs/DESIGN.md says the accent appears in exactly two places — something
+needs attention, and the now-line — and slices 04 and 08 both declined to add a
+third. A model that has not been set up yet is not an alarm; it is a thing you
+have not done. So the strip is one `--text-muted` line and an underlined link in
+a plain Card, under the study strip, and it disappears the moment a `fast` key
+is saved. prompts/10-agents.md's own words are "a single quiet prompt... not a
+modal, not a wizard".
+Instead of: an accent banner (a fourth place the accent appears, shouting on the
+first morning the app is opened), or a dismissible card (state to store, for a
+message that dismisses itself when it is acted on).
+
+## 2026-08-27 — Migration history versions rewritten to `005` and `006`
+Because: slice 01 established that `supabase_migrations.schema_migrations` should
+match the filenames exactly, so `npm run db:push` works. Slice 09 applied its
+migration through the MCP, which stamped a timestamp version (`20260826211633`)
+instead of `005` — leaving a gap that would have made `db push` try to re-apply
+`005_drive.sql` on top of tables that already exist, and 006 would have inherited
+the same problem. Both rows were rewritten to `005`/`drive` and `006`/`agents`
+after applying. The SQL itself was untouched; only the version label changed.
+Instead of: leaving both as timestamps (two conventions in one history table), or
+fixing only 006 (which would have left `db push` broken at 005 anyway, in a
+project where the documented way to apply a migration is `npm run db:push`).
+
+## 2026-08-27 — Dependencies added in slice 10
+Because (rule 10, one line each):
+`ai` — the Vercel AI SDK named in CLAUDE.md's stack table; `generateText` and
+`embed` are what the Test connection button actually calls.
+`@ai-sdk/anthropic` — the Claude provider, which is the key Aadit is pasting first.
+`@ai-sdk/google` — the Gemini provider, named in the slice's definition of done
+("switch the provider to Gemini").
+`@ai-sdk/openai` — the third provider, and the only one besides Google with an
+embedding model, so the `embed` role has two options rather than one.
+Instead of: the Vercel AI Gateway (this is BYOK with the user's own direct
+provider keys — a gateway would put a second account and a second bill between
+Aadit and his own key), or each provider's first-party SDK (three different
+request shapes, and the stack table says AI SDK).
+
 ---
 
 ## Noticed, not fixed
@@ -1317,3 +1494,49 @@ Things spotted outside the current slice. Do not fix them mid-slice; write them 
   seven-day view with no edit affordance) and merging them would mean one
   component with several "is it this screen" props, so they were left apart.
   Worth revisiting if a third task row ever appears.
+- **Slice 10's live provider call has never been made.** There is no real
+  Anthropic, Google or OpenAI key on this machine, so **"Test connection" has
+  never reached a provider**. Everything up to the network is proved:
+  role → provider → configured model routing for all three providers and both
+  model kinds (`modules/agents/registry.test.ts`); encryption in, ciphertext
+  in the database, mask out, and never the key
+  (`modules/agents/agent-profiles.test.ts`); both pre-network refusals — an
+  empty role and an unreadable ciphertext — returning a sentence without
+  calling anything; RLS as a signed-in anon-key user; that no file outside
+  `modules/agents` imports a provider SDK and no `'use client'` file or
+  `/components` file reaches the module or `lib/crypto`
+  (`modules/agents/no-provider-sdk.test.ts`); that `.next/static` contains no
+  key material; and — against the running dev server, with a throwaway
+  signed-in user since deleted — that `/today`, `/settings/agents`,
+  `/settings/drive` and `/settings/semester` all render in both the
+  no-key-configured and key-configured states, with the mask shown and neither
+  the key nor the ciphertext anywhere in the HTML. **Aadit still owes the live
+  pass**: paste a real key into `/settings/agents`, press Test connection, then
+  switch that role's provider to Gemini and press it again.
+- `ENCRYPTION_KEY` now protects **two** things — `google_accounts.refresh_token_enc`
+  from slice 09 and `agent_profiles.api_key_enc` from slice 10. Losing it means
+  re-connecting Drive *and* re-pasting three API keys. The 2026-08-27 note above
+  already said to back it up; it is worth more now.
+- There is still no real settings *section*. `/settings/agents`,
+  `/settings/drive` and `/settings/semester` are three sibling pages that link
+  to each other from their headers, and none of them is in the nav (the bottom
+  bar is full at five columns). Three is about the limit of what that pattern
+  carries; a fourth settings screen should probably come with a
+  `/settings` index page or a nav rethink. The same open question already
+  booked for `/focus` above.
+- `testAgentConnection` sends a real prompt with `maxRetries: 0` and no
+  timeout of its own. A provider that accepts the connection and then hangs
+  will hold the Server Action open until the platform's own limit. The AI SDK
+  takes a `timeout`, so this is a one-line fix — it was left out because a
+  number picked without ever having watched the call succeed is a guess.
+- Nothing calls `getModel` yet except the Test connection button. The registry
+  is built and proved, but slice 11 is the first real consumer, and the shape
+  of "degrade with a clear message" will only be exercised properly when there
+  is a feature to degrade. `AgentNotConfigured` and `AgentKeyUnreadable` exist
+  for it to catch.
+- `MODEL_CHOICES` will go stale. It is three suggestions per provider, typed by
+  hand from what each provider offered in August 2026, and nothing checks it
+  against a live model list. The "or type a model id" box is the escape hatch
+  and is why this is a nuisance rather than a bug — but a `GET /v1/models` per
+  provider would keep the picker honest, and is worth doing the day one of
+  these ids is retired.

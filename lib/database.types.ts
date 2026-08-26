@@ -39,6 +39,42 @@ export type Database = {
   }
   public: {
     Tables: {
+      agent_profiles: {
+        Row: {
+          api_key_enc: string
+          created_at: string
+          id: string
+          key_hint: string
+          model: string
+          provider: string
+          role: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          api_key_enc: string
+          created_at?: string
+          id?: string
+          key_hint?: string
+          model: string
+          provider: string
+          role: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          api_key_enc?: string
+          created_at?: string
+          id?: string
+          key_hint?: string
+          model?: string
+          provider?: string
+          role?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       blocks: {
         Row: {
           content: Json

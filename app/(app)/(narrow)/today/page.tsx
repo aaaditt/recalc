@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 
 import { toggleTaskDoneAction } from '../tasks/actions';
 import { ClassRow } from '@/components/today/class-row';
+import { SetUpAgentsStrip } from '@/components/today/setup-agents';
 import { StudyStrip } from '@/components/today/study-strip';
 import { TaskRow } from '@/components/today/task-row';
 import { Card, CardDivider } from '@/components/ui/card';
@@ -25,6 +26,7 @@ import {
   formatShortDate,
   groupTasksByDay,
 } from '@/lib/today';
+import { hasAgentRole } from '@/modules/agents';
 import { getCourses, getMeetingsOnDate } from '@/modules/courses';
 import { getMinutesOnDate, getMinutesThisWeek } from '@/modules/study';
 import { getOverdueTasks, getTasksDueBetween, type Task } from '@/modules/tasks';
@@ -116,8 +118,15 @@ export default async function TodayPage() {
   // a deadline from March is still a deadline. Until slice 06 the tasks module
   // could only answer the first, and this page faked the second with a 30-day
   // lookback. It does not any more.
-  const [courses, meetings, dueTasks, overdueTasks, minutesToday, minutesThisWeek] =
-    await Promise.all([
+  const [
+    courses,
+    meetings,
+    dueTasks,
+    overdueTasks,
+    minutesToday,
+    minutesThisWeek,
+    hasFastModel,
+  ] = await Promise.all([
       getCourses(supabase, workspace.id),
       getMeetingsOnDate(supabase, workspace.id, today, zone),
       getTasksDueBetween(
@@ -131,6 +140,9 @@ export default async function TodayPage() {
       // The two numbers prompts/07-focus.md allows, and no more.
       getMinutesOnDate(supabase, workspace.id, today, zone),
       getMinutesThisWeek(supabase, workspace.id, zone, today),
+      // The one question this page asks about agents: is there a fast model at
+      // all? Keyed by user, not workspace — see docs/SCHEMA.md.
+      hasAgentRole(supabase, user.id, 'fast'),
     ]);
 
   // A task due at 08:00 on a morning it is now 10:00 is in both lists.
@@ -175,6 +187,14 @@ export default async function TodayPage() {
           week={formatMinutes(minutesThisWeek)}
         />
       </div>
+
+      {/* One quiet line, once, until a `fast` model exists — prompts/10-agents.md:
+          "not a modal, not a wizard". */}
+      {hasFastModel ? null : (
+        <div className="pt-3">
+          <SetUpAgentsStrip />
+        </div>
+      )}
 
       <section className="pt-8">
         <SectionLabel>Classes</SectionLabel>

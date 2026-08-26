@@ -43,12 +43,24 @@ export default async function DriveSettingsPage({
         title="Google Drive"
         subtitle="Where lecture slides, whiteboard photos and problem sheets live."
         actions={
-          <Link
-            href="/settings/semester"
-            className="text-13 text-muted underline-offset-4 hover:text-ink hover:underline"
-          >
-            Semester
-          </Link>
+          <>
+            {/* Slice 10 added /settings/agents. Settings screens link to each
+                other because the bottom nav is full at five columns
+                (docs/DECISIONS.md) — the same reason /courses and
+                /settings/semester are reached from the calendar header. */}
+            <Link
+              href="/settings/agents"
+              className="text-13 text-muted underline-offset-4 hover:text-ink hover:underline"
+            >
+              Agents
+            </Link>
+            <Link
+              href="/settings/semester"
+              className="text-13 text-muted underline-offset-4 hover:text-ink hover:underline"
+            >
+              Semester
+            </Link>
+          </>
         }
       />
 

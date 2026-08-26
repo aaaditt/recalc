@@ -14,11 +14,15 @@
     "db:types": "supabase gen types typescript --linked > lib/database.types.ts"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.44",
+    "@ai-sdk/google": "^4.0.53",
+    "@ai-sdk/openai": "^4.0.49",
     "@supabase/ssr": "^0.12.4",
     "@supabase/supabase-js": "^2.112.3",
     "@tiptap/pm": "^3.30.3",
     "@tiptap/react": "^3.30.3",
     "@tiptap/starter-kit": "^3.30.3",
+    "ai": "^7.0.82",
     "next": "16.3.2",
     "react": "19.2.8",
     "react-dom": "19.2.8",
