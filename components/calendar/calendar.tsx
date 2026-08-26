@@ -310,12 +310,22 @@ export function Calendar(props: CalendarProps) {
         title="Calendar"
         subtitle={subtitle}
         actions={
-          <Link
-            href="/settings/semester"
-            className="text-13 text-muted underline-offset-4 hover:text-ink hover:underline"
-          >
-            Semester
-          </Link>
+          <>
+            {/* The bottom nav is full at five columns (docs/DECISIONS.md), so
+                /courses is reached from here, exactly as /settings/semester is. */}
+            <Link
+              href="/courses"
+              className="text-13 text-muted underline-offset-4 hover:text-ink hover:underline"
+            >
+              Courses
+            </Link>
+            <Link
+              href="/settings/semester"
+              className="text-13 text-muted underline-offset-4 hover:text-ink hover:underline"
+            >
+              Semester
+            </Link>
+          </>
         }
       />
 

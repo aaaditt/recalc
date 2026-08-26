@@ -50,6 +50,26 @@ export const syllabusUnitSchema = z.object({
   created_at: z.string(),
 });
 
+/**
+ * A unit's title. Trimmed, because it is typed straight off a PDF and a
+ * trailing space is not a different unit. Capped so a paste of the whole
+ * syllabus into one box is refused rather than stored as one enormous line.
+ */
+export const syllabusUnitTitleSchema = z
+  .string()
+  .trim()
+  .min(1, 'a unit needs a title')
+  .max(200, 'that is a syllabus, not a unit title');
+
+export const createSyllabusUnitInputSchema = z.object({
+  workspaceId: z.uuid(),
+  courseId: z.uuid(),
+  title: syllabusUnitTitleSchema,
+});
+
+/** One step up or down the list. The whole of reordering, from the UI's side. */
+export const unitMoveSchema = z.enum(['up', 'down']);
+
 export const meetingStatusSchema = z.enum(['scheduled', 'cancelled', 'moved', 'held']);
 
 export const classMeetingSchema = z.object({
@@ -106,6 +126,8 @@ export type Course = z.infer<typeof courseSchema>;
 export type Session = z.infer<typeof sessionSchema>;
 export type SyllabusUnit = z.infer<typeof syllabusUnitSchema>;
 export type SyllabusUnitStatus = z.infer<typeof syllabusUnitStatusSchema>;
+export type CreateSyllabusUnitInput = z.input<typeof createSyllabusUnitInputSchema>;
+export type UnitMove = z.infer<typeof unitMoveSchema>;
 export type ClassMeeting = z.infer<typeof classMeetingSchema>;
 export type MeetingStatus = z.infer<typeof meetingStatusSchema>;
 export type GenerateMeetingsInput = z.input<typeof generateMeetingsInputSchema>;

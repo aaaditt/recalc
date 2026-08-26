@@ -808,6 +808,120 @@ specified it (this was the "Noticed, not fixed" item saying slice 01 skipped
 it), with RLS enabled and four policies in the same file. Nothing was installed:
 the timer is arithmetic on `Date.now()`, and the clock face is `padStart`.
 
+## 2026-08-26 — Syllabus units are renumbered 1..n on every reorder, not fractionally indexed
+Because: `syllabus_units.position` is described in migration 002 as "fractional
+index, same convention as blocks", and that convention is right for a note
+document with a thousand paragraphs. A syllabus is fifteen lines that a person
+reads as "unit 1, unit 2, unit 3" — the number *is* part of what a unit is. So
+`reorderSyllabusUnits` rewrites the whole list as 1..n and only writes the rows
+whose position actually moved, which makes "positions are 1..n, distinct, in
+list order" a property that holds after every single move instead of a hope.
+`moveSyllabusUnit` at either end of the list is a no-op that still renumbers, so
+a course seeded by hand into the Supabase table editor with duplicate positions
+straightens itself out the first time an arrow is pressed.
+Instead of: midpoint insertion (positions drift to 1.0078125 and the screen has
+to renumber for display anyway), or a unique index on `(course_id, position)` —
+which cannot be added while each `update` is its own transaction, because a swap
+transiently collides. The permutation check in the service is the guard instead,
+and `modules/courses/syllabus-units.test.ts` asserts the property after every
+move rather than only at the end.
+
+## 2026-08-26 — Every syllabus write proves the course through the unit's own row
+Because: `syllabus_units` carries no `workspace_id` — ownership flows through
+`course_id`, exactly as its RLS policies in migration 002 do. So a caller who
+sends only a unit id is sending an id that RLS *would* catch but the service
+must catch too, since the service-role key bypasses RLS entirely. `ownedUnit`
+reads the unit first and checks the `course_id` it actually has, so nothing the
+browser said about which course a unit belongs to is ever believed. This is the
+same answer slices 06 and 07 reached with `checkLinks` in `modules/tasks` and
+`modules/study`, for the fourth and fifth time in a row: the check is inside the
+module, so no call site can forget it because no call site performs it.
+Instead of: checking in the four server actions (four chances to forget), or
+trusting RLS, which cannot see the relationship between two tables and is not
+even in the picture for a service-role caller.
+
+## 2026-08-26 — The status chip cycles on one tap, and progress is a count rather than a percentage
+Because: prompts/08-syllabus.md asks for status "set by me in one tap" and for
+progress "honest about what it measures — units marked comfortable or better,
+not a fake percentage". The four statuses are ordered weakest-first, so one tap
+advancing along them (and wrapping from `mastered` back to `not_started`) is
+both one tap and meaningful; a four-chip row per unit would be sixty buttons on
+a fifteen-unit syllabus, and a `<select>` is two taps. Progress reads "6 of 14
+comfortable or better · 4 never opened", because "43%" sounds like a measurement
+of how much of the course I know when it is a count of boxes I ticked myself.
+`nextUnitStatus` is computed in the browser and posted as a hidden field so the
+button's label and its effect cannot disagree; `setSyllabusUnitStatus` validates
+it against the enum regardless.
+Instead of: inferring status from minutes or lectures attended, which is the AI
+this slice explicitly does not have — and would make the one honest number in
+the app a guess.
+
+## 2026-08-26 — "Never opened" means no minutes, no notes, no tasks and an untouched status
+Because: prompts/08-syllabus.md's definition of done is "see at a glance which
+units I have never opened", and `status = 'not_started'` alone does not mean
+that — a unit with three hours logged against it and two tasks open has plainly
+been opened, whatever its chip says. `rollUpUnits` requires all four to be empty
+before it calls a unit untouched, and those rows render in `--text-faint` with
+the words "Never opened" where the other rows show their minutes. The accent is
+deliberately not used: docs/DESIGN.md reserves it for "something needs
+attention" and the now-line, and a syllabus unit is not an alarm.
+Instead of: colouring untouched units with the accent (four places the accent
+now appears, and a syllabus that shouts on the day it is typed in), or reading
+the status alone (which would call a unit you have studied for hours "never
+opened" until you remember to tap the chip).
+
+## 2026-08-26 — The course page is server-rendered; only the cursor needs a client component
+Because: the status chip and the two reorder arrows are three submit buttons in
+one plain `<form>`, so changing a status or moving a unit works with no
+JavaScript at all — and only the clicked button's name and value are posted, so
+a move and a status change can never be confused. The two things a `<form>`
+genuinely cannot do are keep the cursor in the add box after each unit is added
+and save a rename without a visible save button, so those are the only two
+`'use client'` files: `components/syllabus/add-unit.tsx` and
+`components/syllabus/unit-title.tsx`, both leaf-level and about twenty lines.
+That is what makes "type, enter, type, enter" true while typing a syllabus in
+from a PDF.
+Instead of: drag-and-drop reordering (unusable one-handed on a phone, and a
+dependency), or one big client component owning the whole syllabus (which would
+ship the list twice and lose the instant first paint).
+
+## 2026-08-26 — `NoteListEntry` gained a `unitId`, and the unit rollup happens in memory
+Because: a unit has to be able to list the notes attached to it, and there are
+two kinds of note with two different homes for that fact — a lecture note takes
+its unit from `class_meetings.unit_id` (the one-tap topic picker built in slice
+05), a free-standing note from `standalone_notes.unit_id`. `listNotes` already
+reads both, so it is the one place that can answer the question without a second
+source that could disagree. The rollup itself — minutes, notes, tasks and open
+tasks per unit — is `rollUpUnits` in `lib/syllabus.ts`: a pure function over
+plain shapes with its own test, the same split as `lib/today.ts`,
+`lib/calendar.ts`, `lib/tasks.ts` and `lib/study.ts`.
+Instead of: a `getNotesForUnit` in `modules/notes` and a `getTasksForUnit` in
+`modules/tasks` (two more workspace-wide reads for the same three lists the page
+already has), or doing the counting inside a Server Component where no unit test
+can reach it.
+
+## 2026-08-26 — /courses is reached from the calendar header, not from a sixth nav column
+Because: the 2026-08-24 entry above measured the mobile bottom nav and recorded
+that five columns fit at 390px and "a *sixth* would not fit", and slice 07
+followed the same measurement for /focus. The precedent is
+`/settings/semester`, which has been reached from the calendar header since
+slice 04 for exactly this reason. So `/courses` sits beside it there, the
+semester settings' course rows became links to it, and the lecture page's Topic
+section links to the syllabus it is picking from — three doors, all from screens
+that already had a course on them.
+Instead of: cramming a sixth column onto a phone, or leaving the syllabus
+reachable only by typing a UUID into the address bar.
+
+## 2026-08-26 — No migration and no dependencies in slice 08
+Because: `syllabus_units` already has every column this slice needs —
+migration 002 built it with `position`, `title`, `status` and `block_id`, RLS
+enabled and four policies flowing ownership through `course_id` — and
+`tasks.unit_id`, `standalone_notes.unit_id`, `class_meetings.unit_id` and
+`study_sessions.unit_id` are all the linking this slice does. The one unique
+index that would have been worth adding, `(course_id, position)`, cannot be
+(see the renumbering decision above). Nothing was installed: reordering is two
+arrows and an array swap.
+
 ---
 
 ## Noticed, not fixed
@@ -932,6 +1046,25 @@ Things spotted outside the current slice. Do not fix them mid-slice; write them 
   Deliberate (see the decision above) and correct at a few thousand rows a year,
   but it is the read slice 12 leans on hardest, so it is the first one that will
   want pushing into SQL.
+- **A syllabus unit cannot be deleted.** prompts/08-syllabus.md asks for "add,
+  rename, reorder" and slice 08 built exactly those (rule 9). A unit typed in
+  by mistake can be renamed into the one you meant, but a course whose syllabus
+  turned out to have thirteen units rather than fourteen has a spare line on it
+  forever. Deleting needs a confirmation step and a decision about what happens
+  to the minutes, notes and tasks pointing at it — `on delete set null` on all
+  four referencing columns says they survive and lose the link, which is
+  probably right but is a product call, not a code one. Worth its own small
+  piece of work.
+- `/courses` and `/courses/[id]` each read the whole workspace's study
+  sessions, tasks and (on the course page) notes, and narrow them in memory.
+  That is the same trade `/tasks` and `modules/study` already make and it is
+  correct at a few hundred rows, but `/courses` compounds it: it also asks for
+  every course's units one query at a time. The indexes to push all of it into
+  SQL exist; the day it matters, `getUnitStudy` is the first one to move.
+- The syllabus add box posts one unit per Enter. Typing a fourteen-unit
+  syllabus off a PDF is therefore fourteen round trips. Pasting a whole list
+  and splitting it on newlines would be one, and `createSyllabusUnit` already
+  appends, so it is a small change — it just was not asked for.
 - `components/today/task-row.tsx` and `components/tasks/task-item.tsx` are now
   two rows that look nearly the same. They differ in what they show (one is a
   seven-day view with no edit affordance) and merging them would mean one

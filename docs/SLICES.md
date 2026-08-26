@@ -13,7 +13,7 @@ column as you go — this is how a fresh session knows where we are.
 | 05 | Notes + lecture pages — TipTap over blocks | done |
 | 06 | Tasks — CRUD, linked to courses, units and lectures | done |
 | 07 | Focus — Pomodoro logged against a syllabus unit | done |
-| 08 | Syllabus — ordered units, status, progress | not started |
+| 08 | Syllabus — ordered units, status, progress | done |
 | 09 | Google Drive — connect, picker, attach files to lectures | not started |
 | 10 | Agents — BYOK settings, encrypted keys, role registry | not started |
 | 11 | **Recalc engine** — derivations, first recipe, /review queue | not started |

@@ -12,18 +12,25 @@ import {
 import * as repo from './repo';
 import {
   createOneOffMeetingInputSchema,
+  createSyllabusUnitInputSchema,
   generateMeetingsInputSchema,
   meetingStatusSchema,
   rescheduleMeetingInputSchema,
+  syllabusUnitStatusSchema,
+  syllabusUnitTitleSchema,
+  unitMoveSchema,
   type ClassMeeting,
   type Course,
   type CreateOneOffMeetingInput,
+  type CreateSyllabusUnitInput,
   type GenerateMeetingsInput,
   type GenerateMeetingsResult,
   type MeetingStatus,
   type RescheduleMeetingInput,
   type Session,
   type SyllabusUnit,
+  type SyllabusUnitStatus,
+  type UnitMove,
 } from './schema';
 
 // ---------------------------------------------------------------------------
@@ -92,6 +99,179 @@ export async function getMeetingsWithNotes(
   workspaceId: string
 ): Promise<ClassMeeting[]> {
   return repo.listMeetingsWithNotes(db, workspaceId);
+}
+
+// ---------------------------------------------------------------------------
+// Syllabus units — the ordered spine of a course
+//
+// `syllabus_units` carries no `workspace_id`: ownership flows through
+// `course_id`, exactly as the RLS policies in migration 002 do. So every write
+// below proves the course first and works from the row it read, never from an
+// id the browser sent.
+//
+// This is the fifth slice in a row where a write takes a foreign id from the
+// browser, and slices 04, 05 and 06 each shipped the bug before it was found
+// (docs/DECISIONS.md). The answer here is the same shape as `checkLinks` in
+// modules/tasks and modules/study: two small helpers that every write runs, so
+// no caller can forget the check because no caller performs it.
+// ---------------------------------------------------------------------------
+
+/** The course, proved to be this workspace's. Throws otherwise. */
+async function ownedCourse(
+  db: SupabaseClient,
+  workspaceId: string,
+  courseId: string
+): Promise<Course> {
+  const course = await repo.findCourse(db, workspaceId, courseId);
+  if (!course) throw new Error(`syllabus: no course ${courseId} in this workspace`);
+  return course;
+}
+
+/**
+ * The unit, proved to belong to a course this workspace owns.
+ *
+ * The unit is read first and its own `course_id` is what gets checked, so a
+ * caller supplying only a unit id cannot smuggle in someone else's row.
+ */
+async function ownedUnit(
+  db: SupabaseClient,
+  workspaceId: string,
+  unitId: string
+): Promise<SyllabusUnit> {
+  const unit = await repo.findSyllabusUnit(db, unitId);
+  if (!unit) throw new Error(`syllabus: no unit ${unitId}`);
+  await ownedCourse(db, workspaceId, unit.course_id);
+  return unit;
+}
+
+/**
+ * Add a unit to the end of a course's syllabus.
+ *
+ * Appending — rather than asking for a position — is what makes typing a
+ * syllabus in from a PDF a matter of type, enter, type, enter.
+ */
+export async function createSyllabusUnit(
+  db: SupabaseClient,
+  input: CreateSyllabusUnitInput
+): Promise<SyllabusUnit> {
+  const parsed = createSyllabusUnitInputSchema.parse(input);
+  await ownedCourse(db, parsed.workspaceId, parsed.courseId);
+
+  const units = await repo.listSyllabusUnits(db, parsed.courseId);
+  return repo.insertSyllabusUnit(db, {
+    course_id: parsed.courseId,
+    position: units.length + 1,
+    title: parsed.title,
+  });
+}
+
+/** Fix a typo in a unit's title. The unit itself is unchanged. */
+export async function renameSyllabusUnit(
+  db: SupabaseClient,
+  workspaceId: string,
+  id: string,
+  title: string
+): Promise<SyllabusUnit> {
+  await ownedUnit(db, workspaceId, id);
+  return repo.updateSyllabusUnit(db, id, { title: syllabusUnitTitleSchema.parse(title) });
+}
+
+/**
+ * How well I know this unit. Manual, always — docs/PRODUCT.md's payoff needs an
+ * honest answer here, and no amount of minutes logged proves comprehension.
+ */
+export async function setSyllabusUnitStatus(
+  db: SupabaseClient,
+  workspaceId: string,
+  id: string,
+  status: SyllabusUnitStatus
+): Promise<SyllabusUnit> {
+  await ownedUnit(db, workspaceId, id);
+  return repo.updateSyllabusUnit(db, id, {
+    status: syllabusUnitStatusSchema.parse(status),
+  });
+}
+
+/**
+ * Put a course's units in exactly this order.
+ *
+ * `orderedIds` must be a permutation of the units this course already has —
+ * every one of them, once each, and nothing else. A short list would silently
+ * lose a unit; a foreign id would silently adopt someone else's. Both are
+ * refused before anything is written.
+ *
+ * Positions are then rewritten as 1..n. That is a deliberate departure from the
+ * fractional-index convention `blocks` uses: a syllabus is a short hand-typed
+ * list that is read as "unit 1, unit 2, unit 3", and renumbering makes
+ * "positions are 1..n, distinct" a property that holds after every single move
+ * rather than a hope. Only the rows whose position actually changes are
+ * written.
+ */
+export async function reorderSyllabusUnits(
+  db: SupabaseClient,
+  workspaceId: string,
+  courseId: string,
+  orderedIds: string[]
+): Promise<SyllabusUnit[]> {
+  await ownedCourse(db, workspaceId, courseId);
+
+  const units = await repo.listSyllabusUnits(db, courseId);
+  const byId = new Map(units.map((unit) => [unit.id, unit]));
+
+  const seen = new Set<string>();
+  for (const id of orderedIds) {
+    if (!byId.has(id)) {
+      throw new Error(`reorderSyllabusUnits: unit ${id} is not on this course`);
+    }
+    if (seen.has(id)) {
+      throw new Error(`reorderSyllabusUnits: unit ${id} is listed twice`);
+    }
+    seen.add(id);
+  }
+  if (seen.size !== units.length) {
+    throw new Error(
+      `reorderSyllabusUnits: expected all ${units.length} units, got ${seen.size}`
+    );
+  }
+
+  for (const [index, id] of orderedIds.entries()) {
+    const position = index + 1;
+    if (byId.get(id)?.position !== position) {
+      await repo.updateSyllabusUnit(db, id, { position });
+    }
+  }
+
+  return repo.listSyllabusUnits(db, courseId);
+}
+
+/**
+ * Move one unit one place up or down — the two arrows on the course page.
+ *
+ * The course is taken from the unit's own row rather than from the caller, so
+ * the only client-supplied id is the unit's. At either end it is a no-op.
+ */
+export async function moveSyllabusUnit(
+  db: SupabaseClient,
+  workspaceId: string,
+  id: string,
+  move: UnitMove
+): Promise<SyllabusUnit[]> {
+  const unit = await ownedUnit(db, workspaceId, id);
+  const direction = unitMoveSchema.parse(move);
+
+  const units = await repo.listSyllabusUnits(db, unit.course_id);
+  const order = units.map((row) => row.id);
+  const from = order.indexOf(id);
+  const to = direction === 'up' ? from - 1 : from + 1;
+
+  if (from === -1 || to < 0 || to >= order.length) {
+    // Already at the end it was asked to move towards. Still renumber, so a
+    // list that arrived with duplicate positions is straightened out.
+    return reorderSyllabusUnits(db, workspaceId, unit.course_id, order);
+  }
+
+  [order[from], order[to]] = [order[to], order[from]];
+  return reorderSyllabusUnits(db, workspaceId, unit.course_id, order);
 }
 
 // ---------------------------------------------------------------------------

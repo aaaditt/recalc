@@ -157,6 +157,9 @@ export async function listNotes(
       blockId: doc.id,
       title: titleOf(doc),
       courseId: meeting.course_id,
+      // A lecture note's unit is the lecture's topic — the link set with one
+      // tap on the lecture page. There is nowhere else for it to come from.
+      unitId: meeting.unit_id,
       meetingId: meeting.id,
       date: localDateKey(new Date(meeting.starts_at), timeZone),
       at: meeting.starts_at,
@@ -171,6 +174,7 @@ export async function listNotes(
       blockId: doc.id,
       title: titleOf(doc),
       courseId: note.course_id,
+      unitId: note.unit_id,
       meetingId: null,
       date: null,
       at: note.created_at,

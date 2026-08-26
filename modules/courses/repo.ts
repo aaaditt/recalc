@@ -9,6 +9,7 @@ import {
   type MeetingStatus,
   type Session,
   type SyllabusUnit,
+  type SyllabusUnitStatus,
 } from './schema';
 
 // The only file that touches courses, sessions, syllabus_units and
@@ -72,6 +73,44 @@ export async function findSyllabusUnit(
     .maybeSingle();
   if (error) throw new Error(`courses.findSyllabusUnit: ${error.message}`);
   return data ? syllabusUnitSchema.parse(data) : null;
+}
+
+export type NewSyllabusUnitRow = {
+  course_id: string;
+  position: number;
+  title: string;
+};
+
+export async function insertSyllabusUnit(
+  db: SupabaseClient,
+  row: NewSyllabusUnitRow
+): Promise<SyllabusUnit> {
+  const { data, error } = await db
+    .from('syllabus_units')
+    .insert(row)
+    .select('*')
+    .single();
+  if (error) throw new Error(`courses.insertSyllabusUnit: ${error.message}`);
+  return syllabusUnitSchema.parse(data);
+}
+
+/**
+ * Change one unit. Title, status and position are the only three things about
+ * a unit that ever move, and each caller in service.ts passes exactly one.
+ */
+export async function updateSyllabusUnit(
+  db: SupabaseClient,
+  id: string,
+  patch: { title?: string; status?: SyllabusUnitStatus; position?: number }
+): Promise<SyllabusUnit> {
+  const { data, error } = await db
+    .from('syllabus_units')
+    .update(patch)
+    .eq('id', id)
+    .select('*')
+    .single();
+  if (error) throw new Error(`courses.updateSyllabusUnit: ${error.message}`);
+  return syllabusUnitSchema.parse(data);
 }
 
 /** Every lecture that has a note document, most recent lecture first. */

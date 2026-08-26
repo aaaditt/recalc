@@ -83,11 +83,16 @@ export default async function SemesterPage({
         ) : (
           <ul className="divide-y divide-line">
             {courses.map((course, index) => (
-              <li key={course.id} className="flex items-center gap-3 px-4 py-3">
-                <span style={courseDot(colourForCourse(course.colour, index))} />
-                <span className="font-mono text-12 font-medium">{course.code}</span>
-                <span className="min-w-0 flex-1 truncate text-14">{course.name}</span>
-                <Pill>{course.term}</Pill>
+              <li key={course.id}>
+                <Link
+                  href={`/courses/${course.id}`}
+                  className="flex items-center gap-3 px-4 py-3 transition-colors duration-100 hover:bg-sunken"
+                >
+                  <span style={courseDot(colourForCourse(course.colour, index))} />
+                  <span className="font-mono text-12 font-medium">{course.code}</span>
+                  <span className="min-w-0 flex-1 truncate text-14">{course.name}</span>
+                  <Pill>{course.term}</Pill>
+                </Link>
               </li>
             ))}
           </ul>

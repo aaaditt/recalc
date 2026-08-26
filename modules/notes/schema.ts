@@ -81,6 +81,12 @@ export type NoteListEntry = {
   /** A free-standing note's own title; empty for a lecture note. */
   title: string;
   courseId: string | null;
+  /**
+   * The syllabus unit this note is about, when it names one. A lecture note
+   * inherits it from the lecture's topic; a free-standing note carries its own.
+   * This is what lets a unit list the notes attached to it (slice 08).
+   */
+  unitId: string | null;
   /** Set when this note belongs to a dated lecture. */
   meetingId: string | null;
   /** The lecture's local date, when there is a lecture. */

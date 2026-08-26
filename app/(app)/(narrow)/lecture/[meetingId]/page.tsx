@@ -186,6 +186,16 @@ export default async function LecturePage({
             <EmptyState
               title="No syllabus units yet"
               description={`Add units to ${course?.code ?? 'this course'} and they show up here, one tap to pick the one this lecture covered.`}
+              action={
+                course ? (
+                  <Link
+                    href={`/courses/${course.id}`}
+                    className="text-13 text-muted underline underline-offset-4 hover:text-ink"
+                  >
+                    Type in the syllabus
+                  </Link>
+                ) : null
+              }
             />
           </Card>
         ) : (
@@ -216,6 +226,18 @@ export default async function LecturePage({
         <p className="pt-3 text-12 text-muted">
           Which part of the syllabus this lecture covered. It is the link that lets the
           app tell you where your hours actually went.
+          {course ? (
+            <>
+              {' '}
+              <Link
+                href={`/courses/${course.id}`}
+                className="underline underline-offset-4 hover:text-ink"
+              >
+                Edit the syllabus
+              </Link>
+              .
+            </>
+          ) : null}
         </p>
       </Section>
     </>
