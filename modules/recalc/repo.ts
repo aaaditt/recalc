@@ -205,6 +205,20 @@ export async function listSources(
   return (data ?? []).map((row) => derivationSourceSchema.parse(row));
 }
 
+/** Every receipt line of several derivations at once, for a list of answers. */
+export async function listSourcesOfDerivations(
+  db: SupabaseClient,
+  derivationIds: string[]
+): Promise<DerivationSourceRow[]> {
+  if (derivationIds.length === 0) return [];
+  const { data, error } = await db
+    .from('derivation_sources')
+    .select('*')
+    .in('derivation_id', derivationIds);
+  if (error) throw new Error(`recalc.listSourcesOfDerivations: ${error.message}`);
+  return (data ?? []).map((row) => derivationSourceSchema.parse(row));
+}
+
 /** Which derivations name this block as a source. The downstream half of the graph. */
 export async function listSourcesOfBlock(
   db: SupabaseClient,

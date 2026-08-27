@@ -2,14 +2,21 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
 import { addNoteTaskAction, saveNoteAction, summariseNoteAction } from '../actions';
+import {
+  answerQuestionAction,
+  askQuestionAction,
+  setQuestionResolvedAction,
+} from '../../questions/actions';
 import { NoteEditor } from '@/components/notes/note-editor';
 import { NoteSummary } from '@/components/notes/note-summary';
+import { QuestionList } from '@/components/questions/question-list';
 import { dayTitle } from '@/lib/calendar';
 import { colourForCourse, courseDot } from '@/lib/course-colours';
 import { createClient } from '@/lib/supabase/server';
 import { localDateKey, localTimeZone } from '@/lib/time';
 import { getCourses } from '@/modules/courses';
 import { getNoteDocument, getStandaloneNote } from '@/modules/notes';
+import { getQuestionsForNote } from '@/modules/questions';
 import { getNoteSummary } from '@/modules/recalc';
 import { ensureWorkspace } from '@/modules/workspaces';
 
@@ -41,6 +48,7 @@ export default async function NotePage({
   const standalone = await getStandaloneNote(supabase, workspace.id, note.id);
   const summary = await getNoteSummary(supabase, workspace.id, note.id);
   const zone = localTimeZone();
+  const questions = await getQuestionsForNote(supabase, workspace.id, note.id, zone);
   const courses = await getCourses(supabase, workspace.id);
   const index = courses.findIndex((course) => course.id === standalone?.course_id);
   const course = index === -1 ? null : courses[index];
@@ -73,11 +81,13 @@ export default async function NotePage({
         nodes={note.nodes}
         save={saveNoteAction}
         makeTask={addNoteTaskAction.bind(null, note.id)}
+        askQuestion={askQuestionAction}
       />
 
       <p className="pt-2 text-12 text-muted">
         Select a sentence and press <span className="font-mono">＋ Task</span> to turn it
-        into a deadline that remembers where it came from.
+        into a deadline that remembers where it came from, or{' '}
+        <span className="font-mono">? Ask</span> to put a question against it.
       </p>
 
       <section className="pt-8">
@@ -97,6 +107,16 @@ export default async function NotePage({
               : null
           }
           summarise={summariseNoteAction.bind(null, note.id)}
+        />
+      </section>
+
+      <section className="pt-8">
+        <p className="pb-3 font-mono text-label text-faint uppercase">Questions</p>
+        <QuestionList
+          questions={questions}
+          timeZone={zone}
+          answerIt={answerQuestionAction}
+          setResolved={setQuestionResolvedAction}
         />
       </section>
     </>

@@ -102,6 +102,7 @@ export default async function ReviewPage() {
                 key={item.derivationId}
                 derivationId={item.derivationId}
                 recipeLabel={RECIPE_LABEL[item.recipe] ?? item.recipe}
+                question={item.question}
                 note={item.note ? { title: item.note.title, href: item.note.href } : null}
                 currentText={item.currentText}
                 sources={sources}

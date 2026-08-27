@@ -1,9 +1,17 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { createBlock, getBlock, plainTextOf, softDeleteBlock } from '@/modules/blocks';
+import { createBlock, getBlock, getBlocks, plainTextOf, softDeleteBlock } from '@/modules/blocks';
 import { getNoteRefs } from '@/modules/notes';
 
-import { derivationsDownstreamOf, readNoteSources, resolveSources, subjectNoteOf } from './graph';
+import {
+  derivationsDownstreamOf,
+  inputsGoneMessage,
+  readInputs,
+  readNoteSources,
+  resolveSources,
+  subjectNoteOf,
+} from './graph';
+import { ANSWER, ANSWER_PROMPT_VERSION, hasNothingToAnswerFrom } from './recipes/answer';
 import {
   SUMMARIZE,
   SUMMARIZE_PROMPT_VERSION,
@@ -12,6 +20,7 @@ import {
 import * as repo from './repo';
 import type {
   Derivation,
+  ReadSource,
   ReviewItem,
   ReviewSource,
   RunResult,
@@ -172,6 +181,201 @@ export async function getNoteSummary(
 }
 
 // ---------------------------------------------------------------------------
+// Answer a question
+//
+// The same engine, a second recipe. `runDerivation` is not reimplemented here
+// and nothing below writes a status: this creates (or finds) the block and the
+// derivation, seeds the receipt, and hands the id to the worker — exactly what
+// `summariseNote` does above.
+// ---------------------------------------------------------------------------
+
+/**
+ * "Answer this question."
+ *
+ * `questionBlockId` and `anchorBlockIds` both arrive from a browser, so both are
+ * proved against this workspace before a block is written or a model is called.
+ * modules/questions proves them too, on its own side of the boundary; this is
+ * the check that holds for any caller, including a future job.
+ */
+export async function generateAnswer(
+  db: SupabaseClient,
+  ctx: EngineContext,
+  input: { questionBlockId: string; anchorBlockIds: string[] },
+  options: RunOptions = {}
+): Promise<RunResult> {
+  const question = await getBlock(db, input.questionBlockId);
+  if (
+    !question ||
+    question.workspace_id !== ctx.workspaceId ||
+    question.type !== 'question' ||
+    question.deleted_at !== null
+  ) {
+    throw new Error(`generateAnswer: no question ${input.questionBlockId} in this workspace`);
+  }
+
+  const wanted = [...new Set(input.anchorBlockIds)];
+  const anchors = (await getBlocks(db, wanted)).filter(
+    (block) => block.workspace_id === ctx.workspaceId
+  );
+  if (anchors.length !== wanted.length) {
+    throw new Error('generateAnswer: one of those blocks is not in this workspace');
+  }
+
+  const sources: ReadSource[] = [question, ...anchors].map((block) => ({
+    blockId: block.id,
+    version: block.version,
+    text: plainTextOf(block.content),
+  }));
+
+  if (hasNothingToAnswerFrom({ question: plainTextOf(question.content), sources })) {
+    return {
+      ok: false,
+      derivationId: null,
+      error: 'The notes this question is about are empty, so there is nothing to answer from.',
+    };
+  }
+
+  const existing = await findAnswerDerivation(db, ctx.workspaceId, question.id);
+  const derivation =
+    existing ?? (await createAnswerDerivation(db, ctx.workspaceId, sources));
+
+  return runDerivation(db, ctx, derivation.id, options);
+}
+
+/** The answer derivation built from this question block, if there is one. */
+async function findAnswerDerivation(
+  db: SupabaseClient,
+  workspaceId: string,
+  questionBlockId: string
+): Promise<Derivation | null> {
+  const downstream = await derivationsDownstreamOf(db, workspaceId, questionBlockId);
+
+  for (const derivation of downstream) {
+    if (derivation.recipe !== ANSWER) continue;
+    // An answer deleted from /review is a tombstone; asking again should not
+    // resurrect it.
+    const block = await getBlock(db, derivation.derived_block_id);
+    if (block && block.deleted_at === null) return derivation;
+  }
+
+  return null;
+}
+
+/**
+ * The answer block and its derivation, before anything has been generated.
+ *
+ * The receipt is seeded with the question block *and every anchored block*
+ * straight away — not with the question alone. That is what lets
+ * `readAnswerSources` find the whole input set on the very first run without
+ * modules/recalc ever reading `question_anchors`, and it means an edit to an
+ * anchored paragraph flags this answer even if it happens between the question
+ * being asked and the answer being generated.
+ */
+async function createAnswerDerivation(
+  db: SupabaseClient,
+  workspaceId: string,
+  sources: ReadSource[]
+): Promise<Derivation> {
+  const block = await createBlock(db, {
+    workspaceId,
+    type: 'answer',
+    content: { text: '' },
+  });
+
+  const derivation = await repo.insert(db, {
+    workspace_id: workspaceId,
+    derived_block_id: block.id,
+    recipe: ANSWER,
+    model: NOT_YET_RUN,
+    prompt_version: ANSWER_PROMPT_VERSION,
+    status: 'computing',
+  });
+
+  await repo.replaceSources(db, derivation.id, sources);
+  return derivation;
+}
+
+export type Answer = {
+  derivationId: string;
+  blockId: string;
+  text: string;
+  status: Derivation['status'];
+  error: string | null;
+  model: string;
+  computedAt: string | null;
+  /**
+   * The blocks this answer actually read, from the receipt — never from
+   * `question_anchors`. "Based on your notes from the 14 October lecture" has
+   * to name what was read, not what was intended.
+   */
+  sourceBlockIds: string[];
+};
+
+/**
+ * The answers to these questions, keyed by question block id.
+ *
+ * Batched, because every screen that shows questions shows a list of them.
+ */
+export async function getAnswers(
+  db: SupabaseClient,
+  workspaceId: string,
+  questionBlockIds: string[]
+): Promise<Map<string, Answer>> {
+  const answers = new Map<string, Answer>();
+  const wanted = [...new Set(questionBlockIds)];
+  if (wanted.length === 0) return answers;
+
+  // Receipt rows naming one of these question blocks: the downstream half of
+  // the graph, asked for many blocks at once.
+  const naming = await repo.listSourcesOfBlocks(db, wanted);
+  const derivations = (
+    await repo.listByIds(db, workspaceId, [...new Set(naming.map((row) => row.derivation_id))])
+  ).filter((derivation) => derivation.recipe === ANSWER);
+  if (derivations.length === 0) return answers;
+
+  const blocks = await getBlocks(db, derivations.map((d) => d.derived_block_id));
+  const blockById = new Map(blocks.map((block) => [block.id, block]));
+
+  const receipts = await repo.listSourcesOfDerivations(db, derivations.map((d) => d.id));
+
+  for (const derivation of derivations) {
+    const block = blockById.get(derivation.derived_block_id);
+    if (!block || block.deleted_at !== null) continue;
+
+    const questionBlockId = naming.find(
+      (row) => row.derivation_id === derivation.id
+    )?.source_block_id;
+    if (!questionBlockId) continue;
+
+    answers.set(questionBlockId, {
+      derivationId: derivation.id,
+      blockId: block.id,
+      text: plainTextOf(block.content),
+      status: derivation.status,
+      error: derivation.error,
+      model: derivation.model,
+      computedAt: derivation.computed_at,
+      sourceBlockIds: receipts
+        .filter((row) => row.derivation_id === derivation.id)
+        .map((row) => row.source_block_id)
+        .filter((id) => id !== questionBlockId),
+    });
+  }
+
+  return answers;
+}
+
+/** One question's answer, or null if it has never been asked for. */
+export async function getAnswer(
+  db: SupabaseClient,
+  workspaceId: string,
+  questionBlockId: string
+): Promise<Answer | null> {
+  const answers = await getAnswers(db, workspaceId, [questionBlockId]);
+  return answers.get(questionBlockId) ?? null;
+}
+
+// ---------------------------------------------------------------------------
 // /review
 // ---------------------------------------------------------------------------
 
@@ -190,6 +394,11 @@ export async function getReviewQueue(
   if (stale.length === 0) return [];
 
   const items: ReviewItem[] = [];
+  // The block each item's note link is resolved from. For a summary that is the
+  // note document itself; for an answer it is one of the paragraphs the
+  // question was anchored to, and modules/notes resolves either to the same
+  // place. Collected here and looked up once, below.
+  const noteCandidate = new Map<string, string>();
 
   for (const derivation of stale) {
     const derived = await getBlock(db, derivation.derived_block_id);
@@ -198,8 +407,24 @@ export async function getReviewQueue(
     const resolved = await resolveSources(db, derivation.id);
     const note = await subjectNoteOf(db, workspaceId, derivation.id);
 
+    // An answer's receipt names the question block. It is not a source that can
+    // change — nothing in the app edits a question — so it is shown as the
+    // item's subject rather than listed among "what changed in the note".
+    const questionBlock = resolved.find(({ block }) => block?.type === 'question')?.block ?? null;
+
+    const candidate =
+      note?.id ??
+      resolved.find(
+        ({ block }) => block !== null && block.type !== 'question' && block.type !== 'note'
+      )?.block?.id ??
+      null;
+    if (candidate) noteCandidate.set(derivation.id, candidate);
+
     const sources: ReviewSource[] = resolved
-      .filter(({ block }) => block === null || block.type !== 'note')
+      .filter(
+        ({ block }) =>
+          block === null || (block.type !== 'note' && block.type !== 'question')
+      )
       .map(({ row, block }) => ({
         blockId: row.source_block_id,
         readVersion: row.source_version,
@@ -220,24 +445,23 @@ export async function getReviewQueue(
       computedAt: derivation.computed_at,
       derivedBlockId: derived.id,
       currentText: plainTextOf(derived.content),
-      note: note ? { blockId: note.id, title: '', href: `/notes/${note.id}` } : null,
+      question: questionBlock ? plainTextOf(questionBlock.content) : null,
+      note: null,
       sources,
     });
   }
 
   // A lecture note is read on its lecture page and a free-standing one at
   // /notes/<id>. modules/notes owns that resolution — there is no second place
-  // in the app that decides where a note lives.
-  const refs = await getNoteRefs(
-    db,
-    workspaceId,
-    items.flatMap((item) => (item.note ? [item.note.blockId] : []))
-  );
+  // in the app that decides where a note lives. It resolves a paragraph to the
+  // document it sits in, so an answer's anchor and a summary's note document
+  // are the same question asked twice.
+  const refs = await getNoteRefs(db, workspaceId, [...noteCandidate.values()]);
 
   for (const item of items) {
-    if (!item.note) continue;
-    const ref = refs.get(item.note.blockId);
-    if (ref) item.note = { blockId: item.note.blockId, title: ref.title, href: ref.href };
+    const candidate = noteCandidate.get(item.derivationId);
+    const ref = candidate ? refs.get(candidate) : undefined;
+    if (ref) item.note = { blockId: ref.docId, title: ref.title, href: ref.href };
   }
 
   // Newest computation first: the thing you were most recently looking at is
@@ -266,19 +490,18 @@ export async function keepOldVersion(
     throw new Error(`keepOldVersion: no derivation ${derivationId} in this workspace`);
   }
 
-  const note = await subjectNoteOf(db, ctx.workspaceId, derivation.id);
-  const read = note ? await readNoteSources(db, ctx.workspaceId, note.id) : null;
-  if (!read) {
+  const inputs = await readInputs(db, ctx.workspaceId, derivation);
+  if (!inputs) {
     return {
       ok: false,
       derivationId: derivation.id,
-      error: 'The note this was built from is gone.',
+      error: inputsGoneMessage(derivation.recipe),
     };
   }
 
   const block = await getBlock(db, derivation.derived_block_id);
 
-  await repo.replaceSources(db, derivation.id, read.sources);
+  await repo.replaceSources(db, derivation.id, inputs.sources);
   await repo.setComputed(db, derivation.id, derivation.model);
 
   return {

@@ -17,7 +17,7 @@ column as you go — this is how a fresh session knows where we are.
 | 09 | Google Drive — connect, picker, attach files to lectures | done |
 | 10 | Agents — BYOK settings, encrypted keys, role registry | done |
 | 11 | **Recalc engine** — derivations, first recipe, /review queue | done |
-| 12 | **Questions** — ask-about-selection, open questions per course | not started |
+| 12 | **Questions** — ask-about-selection, open questions per course | done |
 | 13 | Search — pgvector over versioned embeddings | not started |
 | 14 | Email connect — Gmail OAuth, incremental sync | not started |
 | 15 | Email extraction — proposals queue | not started |
@@ -53,6 +53,14 @@ been written by a real model**. Every status transition, every receipt and
 every screen works without one; what is unverified is whether the summaries a
 live provider returns are any good. Paste a key into `/settings/agents` and
 press Summarise on a note.
+
+Slice 12 inherits exactly that gap and nothing else. The lifecycle, the
+anchoring, the receipt, the cascade through `derivation_sources` and the course
+page's sentence are all proved against the real database
+(`modules/recalc/answer-staleness.test.ts`, `lib/questions.test.ts`), with only
+the provider's network faked — but **no answer in this project has ever been
+written by a real model either**. Same key, same fix: paste one in and press
+Answer on a question.
 
 ## If you run out of steam
 

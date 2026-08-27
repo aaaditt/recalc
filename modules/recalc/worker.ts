@@ -3,7 +3,8 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { generateWithRole, getAgentProfile, modelLabel, type Generate } from '@/modules/agents';
 import { getBlocks, updateBlock } from '@/modules/blocks';
 
-import { readNoteSources, subjectNoteOf } from './graph';
+import { inputsGoneMessage, readInputs } from './graph';
+import { ANSWER, answer } from './recipes/answer';
 import { SUMMARIZE, summarize } from './recipes/summarize';
 import * as repo from './repo';
 import type { Derivation, Preview, ReadSource, RecipeOutput, RunResult } from './schema';
@@ -63,21 +64,19 @@ async function produce(
   derivation: Derivation,
   generate: Generate
 ): Promise<RecipeOutput> {
-  const note = await subjectNoteOf(db, ctx.workspaceId, derivation.id);
-  if (!note) {
-    throw new Error('The note this was built from is gone.');
+  // One read for both recipes: the current state of exactly the blocks this
+  // derivation is built from. graph.ts knows which blocks those are; this
+  // function only knows which recipe reads them.
+  const inputs = await readInputs(db, ctx.workspaceId, derivation);
+  if (!inputs) {
+    throw new Error(inputsGoneMessage(derivation.recipe));
   }
 
-  const read = await readNoteSources(db, ctx.workspaceId, note.id);
-  if (!read) {
-    throw new Error('The note this was built from is gone.');
-  }
-
-  switch (derivation.recipe) {
+  switch (inputs.recipe) {
     case SUMMARIZE:
-      return summarize({ title: read.title, sources: read.sources }, generate);
-    default:
-      throw new Error(`There is no recipe called "${derivation.recipe}" yet.`);
+      return summarize({ title: inputs.title, sources: inputs.sources }, generate);
+    case ANSWER:
+      return answer({ question: inputs.question, sources: inputs.sources }, generate);
   }
 }
 
@@ -277,17 +276,16 @@ export async function acceptPreview(
     return { ok: false, derivationId: derivation.id, error: 'There is nothing to accept.' };
   }
 
-  const note = await subjectNoteOf(db, ctx.workspaceId, derivation.id);
-  const read = note ? await readNoteSources(db, ctx.workspaceId, note.id) : null;
-  if (!read) {
+  const inputs = await readInputs(db, ctx.workspaceId, derivation);
+  if (!inputs) {
     return {
       ok: false,
       derivationId: derivation.id,
-      error: 'The note this was built from is gone.',
+      error: inputsGoneMessage(derivation.recipe),
     };
   }
 
-  if (!sameSources(read.sources, preview.sources)) {
+  if (!sameSources(inputs.sources, preview.sources)) {
     return {
       ok: false,
       derivationId: derivation.id,
@@ -301,8 +299,8 @@ export async function acceptPreview(
   const model = profile ? modelLabel(profile.provider, profile.model) : derivation.model;
 
   try {
-    await persist(db, derivation, { content: { text }, sources: read.sources, model });
-    await settle(db, derivation, read.sources);
+    await persist(db, derivation, { content: { text }, sources: inputs.sources, model });
+    await settle(db, derivation, inputs.sources);
     return { ok: true, derivationId: derivation.id, text, model };
   } catch (error) {
     return {

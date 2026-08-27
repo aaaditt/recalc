@@ -9,6 +9,7 @@ import {
   renameUnitAction,
   unitRowAction,
 } from './actions';
+import { resolveQuestionFormAction } from '../../questions/actions';
 import { AddUnit } from '@/components/syllabus/add-unit';
 import { UnitTitle } from '@/components/syllabus/unit-title';
 import { Button } from '@/components/ui/button';
@@ -18,6 +19,12 @@ import { Input } from '@/components/ui/field';
 import { Pill } from '@/components/ui/pill';
 import { colourForCourse, courseDot } from '@/lib/course-colours';
 import { cx } from '@/lib/cx';
+import {
+  nearestExamTask,
+  questionsByUnit,
+  revisionSentence,
+  unfiledCount,
+} from '@/lib/questions';
 import { formatMinutes } from '@/lib/study';
 import { createClient } from '@/lib/supabase/server';
 import {
@@ -29,10 +36,11 @@ import {
   type UnitRollup,
   type UnitStatus,
 } from '@/lib/syllabus';
-import { localTimeZone } from '@/lib/time';
+import { localTimeZone, todayIn } from '@/lib/time';
 import { formatShortDate } from '@/lib/today';
 import { getCourse, getCourses, getSyllabusUnits } from '@/modules/courses';
 import { listNotes } from '@/modules/notes';
+import { getUnresolvedQuestions, type QuestionView } from '@/modules/questions';
 import { getUnitStudy } from '@/modules/study';
 import { getTasks } from '@/modules/tasks';
 import { ensureWorkspace } from '@/modules/workspaces';
@@ -85,6 +93,54 @@ function unitFacts(unit: UnitRollup): string {
   return parts.join(' · ');
 }
 
+/**
+ * The questions under one unit heading.
+ *
+ * Each is a link back to the note it was asked in, plus one plain `<form>` that
+ * marks it understood — no JavaScript at all, the same way the status chip and
+ * the reorder arrows on this page work. Answering happens where the answer can
+ * be read, which is the note page; this screen is the list, not the reading.
+ */
+function QuestionLines({ questions }: { questions: QuestionView[] }) {
+  return (
+    <ul className="flex flex-col gap-2 pt-2">
+      {questions.map((question) => (
+        <li key={question.blockId} className="flex items-start gap-3">
+          <div className="min-w-0 flex-1">
+            {question.note ? (
+              <Link
+                href={question.note.href}
+                className="text-13 text-muted underline-offset-4 hover:text-ink hover:underline"
+              >
+                {question.text}
+              </Link>
+            ) : (
+              <span className="text-13 text-muted">{question.text}</span>
+            )}
+            <span className="block text-12 text-faint">
+              {question.status === 'answered'
+                ? 'Answered — not marked understood'
+                : 'Never answered'}
+              {question.answer?.status === 'stale' ? ' · answer out of date' : ''}
+            </span>
+          </div>
+
+          <form action={resolveQuestionFormAction} className="shrink-0">
+            <input type="hidden" name="questionBlockId" value={question.blockId} />
+            <input type="hidden" name="resolved" value="true" />
+            <button
+              type="submit"
+              className="flex h-(--control-height) items-center rounded-full bg-sunken px-3 text-12 font-medium text-muted transition-colors duration-100 hover:text-ink"
+            >
+              Understood
+            </button>
+          </form>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export default async function CoursePage({
   params,
 }: {
@@ -104,12 +160,13 @@ export default async function CoursePage({
 
   const zone = localTimeZone();
 
-  const [courses, units, study, notes, tasks] = await Promise.all([
+  const [courses, units, study, notes, tasks, unresolved] = await Promise.all([
     getCourses(supabase, workspace.id),
     getSyllabusUnits(supabase, course.id),
     getUnitStudy(supabase, workspace.id, zone),
     listNotes(supabase, workspace.id, zone),
     getTasks(supabase, workspace.id),
+    getUnresolvedQuestions(supabase, workspace.id, zone),
   ]);
 
   // Courses come back ordered by code, so a course with no colour of its own
@@ -136,6 +193,34 @@ export default async function CoursePage({
     }
   );
   const progress = courseProgress(rolled);
+
+  // The payoff. Unresolved questions per unit, crossed with the minutes
+  // modules/study has been logging since slice 07 — counts and minutes that are
+  // genuinely in the database, and nothing else. The arithmetic is in
+  // lib/questions.ts so it can be tested without a database.
+  const courseQuestions = unresolved.filter((question) => question.courseId === course.id);
+  const questionUnits = questionsByUnit(units, courseQuestions, study);
+  const unfiled = unfiledCount(courseQuestions, course.id);
+  const sentence = revisionSentence(questionUnits, {
+    unfiled,
+    // There is no exam_date anywhere in this schema, and inventing one is out
+    // of scope for a sentence. My own task list is the only place a real exam
+    // date lives, so that is the only place this looks.
+    exam: nearestExamTask(tasks, {
+      courseId: course.id,
+      today: todayIn(zone),
+      timeZone: zone,
+    }),
+  });
+
+  const questionsByUnitId = new Map<string, typeof courseQuestions>();
+  for (const question of courseQuestions) {
+    const key = question.unitId ?? '';
+    const found = questionsByUnitId.get(key) ?? [];
+    found.push(question);
+    questionsByUnitId.set(key, found);
+  }
+  const unfiledQuestions = questionsByUnitId.get('') ?? [];
 
   const rowAction = unitRowAction.bind(null, course.id);
   const rename = renameUnitAction.bind(null, course.id);
@@ -172,7 +257,64 @@ export default async function CoursePage({
             {formatMinutes(progress.minutes)} logged against these units.
           </p>
         ) : null}
+
+        {/* The sentence docs/PRODUCT.md is built around. Plain prose, no chart,
+            no gauge, no invented score — every number in it is a count of rows
+            or a sum of minutes. It is the only line on this page in full ink,
+            which is how it stands out without any decoration at all. */}
+        {sentence ? (
+          <p className="pt-4 text-14 leading-relaxed">{sentence}</p>
+        ) : null}
       </header>
+
+      <Section label="Open questions">
+        <Card className="overflow-hidden">
+          {courseQuestions.length === 0 ? (
+            <EmptyState
+              title="Nothing unresolved"
+              description="Select a sentence in a lecture note and press Ask. Questions stay here until you mark them understood — answering one is not the same as understanding it."
+            />
+          ) : (
+            <ul className="divide-y divide-line">
+              {questionUnits
+                .filter((unit) => unit.unresolved > 0)
+                .map((unit) => (
+                  <li key={unit.unitId} className="px-4 py-3">
+                    <div className="flex items-baseline justify-between gap-3">
+                      <p className="min-w-0 truncate text-14 font-medium">{unit.title}</p>
+                      <p className="shrink-0 text-12 text-muted">
+                        {unit.unresolved} open ·{' '}
+                        {unit.minutes > 0 ? formatMinutes(unit.minutes) : 'no time logged'}
+                      </p>
+                    </div>
+                    <QuestionLines
+                      questions={questionsByUnitId.get(unit.unitId) ?? []}
+                    />
+                  </li>
+                ))}
+
+              {unfiledQuestions.length > 0 ? (
+                <li className="px-4 py-3">
+                  <div className="flex items-baseline justify-between gap-3">
+                    <p className="min-w-0 truncate text-14 font-medium text-muted">
+                      Not filed under a unit
+                    </p>
+                    <p className="shrink-0 text-12 text-muted">
+                      {unfiledQuestions.length} open
+                    </p>
+                  </div>
+                  <QuestionLines questions={unfiledQuestions} />
+                </li>
+              ) : null}
+            </ul>
+          )}
+        </Card>
+
+        <p className="pt-3 text-12 text-muted">
+          A question is filed under the unit its lecture covered. Pick a topic on a
+          lecture page and its questions land here.
+        </p>
+      </Section>
 
       <Section label="Syllabus">
         <Card className="overflow-hidden">

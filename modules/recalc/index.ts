@@ -12,10 +12,14 @@
 // where it happens.
 export {
   discardDerivation,
+  generateAnswer,
+  getAnswer,
+  getAnswers,
   getNoteSummary,
   getReviewQueue,
   keepOldVersion,
   summariseNote,
+  type Answer,
   type NoteSummary,
 } from './service';
 export {
@@ -33,9 +37,12 @@ export {
 export {
   derivationsDownstreamOf,
   derivationsForNote,
+  readAnswerSources,
+  readInputs,
   readNoteSources,
   resolveSources,
   subjectNoteOf,
+  type DerivationInputs,
   type ResolvedSource,
 } from './graph';
 export {
@@ -45,6 +52,13 @@ export {
   summarize,
   type SummarizeInput,
 } from './recipes/summarize';
+export {
+  ANSWER,
+  ANSWER_PROMPT_VERSION,
+  answer,
+  hasNothingToAnswerFrom,
+  type AnswerInput,
+} from './recipes/answer';
 export {
   derivationSchema,
   derivationSourceSchema,

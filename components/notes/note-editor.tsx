@@ -17,6 +17,10 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { BlockId } from '@/components/notes/block-id';
 import {
+  AskFromSelection,
+  type QuestionSelection,
+} from '@/components/questions/ask-from-selection';
+import {
   TaskFromSelection,
   type SelectionTask,
 } from '@/components/tasks/task-from-selection';
@@ -62,9 +66,24 @@ type NoteEditorProps = {
    * that routing is decided server-side, in lib/files.ts.
    */
   saveImage?: (formData: FormData) => Promise<void>;
+  /**
+   * Ask a question about the selection. Omit it and the button is not drawn.
+   *
+   * Same contract as `makeTask`: the editor hands back the words and the ids of
+   * the top-level blocks the selection touched, and knows nothing about
+   * courses, lectures, models or the database.
+   */
+  askQuestion?: (input: { text: string; anchorBlockIds: string[] }) => Promise<void>;
 };
 
-export function NoteEditor({ docId, nodes, save, makeTask, saveImage }: NoteEditorProps) {
+export function NoteEditor({
+  docId,
+  nodes,
+  save,
+  makeTask,
+  saveImage,
+  askQuestion,
+}: NoteEditorProps) {
   const [status, setStatus] = useState<Status>('clean');
   // What just happened to a pasted picture. One line, then it goes away.
   const [imageNote, setImageNote] = useState<string | null>(null);
@@ -72,6 +91,7 @@ export function NoteEditor({ docId, nodes, save, makeTask, saveImage }: NoteEdit
   // it has anything to work on.
   const [selected, setSelected] = useState('');
   const [selection, setSelection] = useState<SelectionTask | null>(null);
+  const [question, setQuestion] = useState<QuestionSelection | null>(null);
 
   const docIdRef = useRef(docId);
 
@@ -225,6 +245,46 @@ export function NoteEditor({ docId, nodes, save, makeTask, saveImage }: NoteEdit
     setSelection({ title: text, blockId });
   }, [editor, flush, selected]);
 
+  /**
+   * Open the ask sheet for whatever is selected.
+   *
+   * The pending save is flushed first for the same reason the task sheet does
+   * it: a question about a sentence typed thirty seconds ago would otherwise
+   * name blocks that are not in the database yet, and the write would be
+   * refused for a reason the person cannot see.
+   *
+   * Unlike a task, a question takes EVERY top-level block the selection
+   * touched, not just the one the cursor started in — highlighting three
+   * paragraphs and asking about them means the question is about all three, and
+   * editing any of them has to flag its answer.
+   */
+  const openAskSheet = useCallback(async () => {
+    if (!editor) return;
+
+    const text = selected.trim();
+    if (text === '') return;
+
+    if (pending.current) await flush();
+
+    const { state } = editor;
+    const { from, to } = state.selection;
+    const anchorBlockIds: string[] = [];
+
+    state.doc.nodesBetween(from, to, (node, _pos, parent) => {
+      // Only the top-level nodes are `blocks` rows; everything below them is
+      // inline content of one.
+      if (parent !== state.doc) return false;
+      const blockId = node.attrs?.blockId;
+      if (typeof blockId === 'string' && !anchorBlockIds.includes(blockId)) {
+        anchorBlockIds.push(blockId);
+      }
+      return false;
+    });
+
+    if (anchorBlockIds.length === 0) return;
+    setQuestion({ quote: text, anchorBlockIds });
+  }, [editor, flush, selected]);
+
   // Leaving the page — closing the tab, switching apps on a phone, or simply
   // navigating away — is the last chance to write what is still pending.
   useEffect(() => {
@@ -254,6 +314,15 @@ export function NoteEditor({ docId, nodes, save, makeTask, saveImage }: NoteEdit
           />
         ) : null}
 
+        {askQuestion ? (
+          <ToolButton
+            label="? Ask"
+            title="Ask a question about the selection"
+            disabled={selected.trim() === ''}
+            onClick={() => void openAskSheet()}
+          />
+        ) : null}
+
         <span
           aria-live="polite"
           className={cx(
@@ -278,6 +347,14 @@ export function NoteEditor({ docId, nodes, save, makeTask, saveImage }: NoteEdit
           selection={selection}
           onClose={() => setSelection(null)}
           create={makeTask}
+        />
+      ) : null}
+
+      {askQuestion ? (
+        <AskFromSelection
+          selection={question}
+          onClose={() => setQuestion(null)}
+          ask={askQuestion}
         />
       ) : null}
     </div>

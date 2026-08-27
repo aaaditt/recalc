@@ -41,6 +41,12 @@ type ReviewItemProps = {
   derivationId: string;
   /** 'summarize' — spelled for a person by the page. */
   recipeLabel: string;
+  /**
+   * For an answer, the question it answers. It is what makes this row readable:
+   * without it an out-of-date answer is a paragraph of prose with no subject.
+   * Null for every other recipe (prompts/12-questions.md, item 2).
+   */
+  question: string | null;
   note: { title: string; href: string } | null;
   currentText: string;
   sources: ReviewSourceView[];
@@ -58,6 +64,7 @@ function Label({ children }: { children: ReactNode }) {
 
 export function ReviewItem({
   recipeLabel,
+  question,
   note,
   currentText,
   sources,
@@ -72,6 +79,9 @@ export function ReviewItem({
   const [busy, startBusy] = useTransition();
 
   const changed = sources.filter((source) => source.changed);
+  // An answer and a summary get the same three buttons and the same diff; what
+  // they are called is the whole difference on screen.
+  const noun = question ? 'answer' : 'summary';
 
   function run(work: () => Promise<void>) {
     setProblem(null);
@@ -97,6 +107,9 @@ export function ReviewItem({
               'A note that no longer exists'
             )}
           </p>
+          {question ? (
+            <p className="mt-1 text-14 leading-relaxed">“{question}”</p>
+          ) : null}
           <p className="mt-1 text-13 text-muted">
             {changed.length === 1
               ? 'One paragraph changed since this was written'
@@ -132,12 +145,14 @@ export function ReviewItem({
 
       <div className="grid gap-4 px-4 py-4 md:grid-cols-2">
         <section>
-          <Label>The summary you have</Label>
+          <Label>The {noun} you have</Label>
           <p className="text-14 leading-relaxed whitespace-pre-wrap">{currentText}</p>
         </section>
 
         <section>
-          <Label>{preview ? 'The summary now' : 'The summary now — not generated yet'}</Label>
+          <Label>
+            {preview ? `The ${noun} now` : `The ${noun} now — not generated yet`}
+          </Label>
           {preview ? (
             <>
               <p className="text-14 leading-relaxed whitespace-pre-wrap">{preview.text}</p>
@@ -206,7 +221,7 @@ export function ReviewItem({
       </div>
 
       <p className="px-4 pb-4 text-12 text-muted">
-        <strong className="font-medium">Keep old</strong> means the summary still stands:
+        <strong className="font-medium">Keep old</strong> means the {noun} still stands:
         it stops asking, against the note as it is now, until the next change.
       </p>
     </Card>

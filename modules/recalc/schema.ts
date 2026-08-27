@@ -19,7 +19,7 @@ import { z } from 'zod';
 export const derivationStatusSchema = z.enum(['fresh', 'stale', 'computing', 'error']);
 export type DerivationStatus = z.infer<typeof derivationStatusSchema>;
 
-/** The recipes docs/SCHEMA.md names. Only `summarize` is built (slice 11). */
+/** The recipes docs/SCHEMA.md names. `summarize` (11) and `answer` (12) are built. */
 export const recipeSchema = z.enum(['summarize', 'flashcards', 'answer', 'extract', 'plan']);
 export type RecipeName = z.infer<typeof recipeSchema>;
 
@@ -132,8 +132,14 @@ export type ReviewItem = {
   error: string | null;
   computedAt: string | null;
   derivedBlockId: string;
-  /** The summary as it stands right now. */
+  /** The summary — or the answer — as it stands right now. */
   currentText: string;
+  /**
+   * For `recipe: 'answer'`, the question it answers, so /review can label it as
+   * an answer to that question rather than as a summary. Null for every other
+   * recipe.
+   */
+  question: string | null;
   /** The note it was built from: null only if that note has been destroyed. */
   note: { blockId: string; title: string; href: string } | null;
   /** Every source, changed ones first. */

@@ -1460,6 +1460,109 @@ version, and was rewritten to `007`/`recalc` immediately afterwards for the same
 reason slices 09 and 10 did it: `npm run db:push` only works while the history
 matches the filenames.
 
+## 2026-08-27 — A question is a block; `questions` indexes its lifecycle, `question_anchors` says what it is about
+Because: `blocks.type` has listed `'question'` since migration 001, so storing
+one needed nothing new. What a block cannot say is where it is in a lifecycle,
+and `standalone_notes` (003) already set the precedent for that: index the
+blocks of one type in their own small table rather than hanging nullable,
+type-specific columns off `blocks`. `question_anchors` is the same shape as
+`derivation_sources` — a join table, composite primary key, no id of its own —
+minus the version column, because **an anchor is not a receipt**. It records
+what the question is *about*, which does not change when the paragraph is
+edited. What an answer actually *read* stays in `derivation_sources`, which is
+the only place the cascade can see.
+Instead of: `blocks.question_status`, which would be null on every other row in
+the table, or putting versions on the anchors, which would create a second
+receipt free to disagree with the real one.
+
+## 2026-08-27 — `modules/recalc` reads an answer's sources from the receipt, and never learns that `modules/questions` exists
+Because: `readAnswerSources` resolves an answer's inputs out of
+`derivation_sources` — the question block, then every block it names — rather
+than out of `question_anchors`. Same reasoning as `subjectNoteOf` in slice 11:
+the receipt already says what this was built from, so a second lookup could only
+ever contradict it. It also keeps the dependency pointing one way — questions
+imports recalc, recalc imports nothing of questions — which is what lets
+`generateAnswer` be reachable from a future job that has no question table at
+all. The receipt is seeded with the question **and every anchor** the moment the
+derivation is created, so it is complete before the first run: an edit that
+lands between asking and answering still flags it.
+Instead of: `readAnswerSources` querying `question_anchors`, which would put a
+module boundary violation and a second source of truth in one line.
+
+## 2026-08-27 — The question block is not a child of the note document
+Because: `saveNoteDocument` reconciles a document against the nodes the editor
+sent and soft-deletes every child it does not recognise. A question parked in
+there would be destroyed by the next keystroke. It hangs off nothing, and
+`question_anchors` is what says which paragraphs it belongs to — the same answer
+slice 11 reached for summary blocks, for the same reason.
+Instead of: a TipTap node type for questions, which would make the question part
+of the document's own content and therefore part of what a summary reads.
+
+## 2026-08-27 — Only `open` → `answered` is automatic; `resolved` is never inferred
+Because: docs/PRODUCT.md's third rule is that an answered-but-unresolved
+question is still an open loop. `answerQuestion` moves the row to `answered`
+only when the run actually produced an answer, and only from `open`, so a
+regeneration cannot drag a resolved question backwards. `resolved` has exactly
+one writer — a button — because it means "a person read this and was satisfied",
+which is not something the app can observe. `reopenQuestion` is the way back
+from a mis-tap, and it lands on `answered` or `open` depending on whether an
+answer exists.
+Instead of: resolving on a successful answer, which would empty the revision
+list of precisely the questions worth revisiting.
+
+## 2026-08-27 — `app/(app)/(narrow)/questions/` holds actions and no page
+Because: questions are read on three screens — a lecture, a note and a course —
+and all three need the same four server actions. A directory with no `page.tsx`
+creates no route, so the actions live once instead of three times. They
+`revalidatePath` the route *patterns* rather than concrete paths, so answering a
+question on a lecture page refreshes the course page that counts it.
+Instead of: a `/questions` index screen nobody asked for (the nav is full at
+five columns), or three copies of the same four functions.
+
+## 2026-08-27 — The exam clause comes from my own task list, because there is no `exam_date`
+Because: prompts/12-questions.md asks the sentence to include days remaining
+"if an exam date is known". Nothing in this schema stores one. The only place a
+real exam date exists is a task I typed myself, so `nearestExamTask` looks for an
+open, still-future task on this course whose title contains an exam-shaped word,
+and the sentence names it back in my own words — "Your task “Final exam” is due
+in 9 days" — so it can never read as a date the app knows and I do not. Null is
+the common case and the sentence simply omits the clause.
+Instead of: adding an `exam_date` column (a migration and a screen for one
+clause), or inferring an exam from the calendar, which is exactly the confident
+wrongness this product exists to refuse.
+
+## 2026-08-27 — `/review` labels an answer by its question, and calls it an answer
+Because: `getReviewQueue` already had to treat an answer's question block
+specially — it is on the receipt but it is not a source that can change, since
+nothing in the app edits a question — so it is lifted out as the item's
+`question` and the remaining sources are the ones that really moved.
+`ReviewItem` takes that as a prop and swaps one noun: "The answer you have" /
+"The answer now", with the question quoted above the diff. Without it a stale
+answer is a paragraph of prose with no subject, which is the one thing that
+screen may not be.
+Instead of: a separate review screen for answers (two implementations of the
+diff, the accept guard and the three buttons), or leaving the recipe label
+"Answer" to carry the whole meaning.
+
+## 2026-08-27 — The course page renders `QuestionView`, not `QuestionRow`
+Because: `getUnresolvedQuestions` returns the *view* — the question with its
+note, its course, its unit and its answer resolved — and that is what the Open
+Questions section draws (`question.note.href`, `question.answer.status`).
+`QuestionRow` is the raw `questions` table row and has none of those. Both are
+exported from `modules/questions`; the page imports the view from the module's
+`index.ts`, never from `schema.ts` (rule 1).
+Instead of: casting the row type to silence the error, which would have compiled
+and then rendered `undefined` in four places.
+
+## 2026-08-27 — One migration, no dependencies, in slice 12
+Because (rule 10): nothing was installed. `supabase/migrations/008_questions.sql`
+adds `questions` and `question_anchors`, both with RLS enabled and all four
+policies (rule 8) — `question_anchors` inherits ownership through the question
+block, exactly as `derivation_sources` inherits it through its derivation. The
+cascade trigger from migration 001 is untouched: an answer goes stale through
+the same `mark_derivations_stale()` a summary does, and there is a test that
+proves it (`modules/recalc/answer-staleness.test.ts`).
+
 ---
 
 ## Noticed, not fixed
@@ -1783,3 +1886,53 @@ Things spotted outside the current slice. Do not fix them mid-slice; write them 
   re-run. Nothing is wrong with the tests; the project is remote and vitest runs
   files in parallel. If it becomes routine, `maxConcurrency` or a
   `--pool=threads --poolOptions.threads.singleThread` run is the lever.
+- **No answer in this project has ever been written by a real model.** Same gap
+  as slice 11's summaries and for the same reason: there is still no provider key
+  on this machine. What *is* proved, against the real database and the real
+  trigger with only the provider's network faked, is the whole of slice 12's
+  claim — the anchoring, the receipt naming exactly the question and its anchors,
+  the cascade firing through `derivation_sources` and *not* through "an edit
+  somewhere in the note", `/review` labelling it as an answer to its question,
+  regeneration moving the receipt forward, and the lifecycle
+  (`modules/recalc/answer-staleness.test.ts`, 12 tests) — plus the sentence's
+  arithmetic without a database (`lib/questions.test.ts`). What is unproved is
+  the wording in `recipes/answer.ts`: whether "2 to 5 short sentences" is the
+  right shape, whether `maxOutputTokens: 600` truncates, and whether "if the
+  notes do not contain the answer, say exactly what is missing" actually stops a
+  model inventing. All of it is a wording change, not a structural one.
+- `/review`'s "Did not finish" section still says "Open the note it belongs to
+  and press **Summarise** again". For a failed *answer* the button to press is
+  Answer, on the question, not Summarise on the note. It is one sentence of copy
+  on slice 11's screen and the failure list does not yet say which recipe each
+  row is, so fixing it properly means giving `getFailedDerivations` the same
+  `recipe`/`question` treatment `getReviewQueue` got. Worth doing the next time
+  that screen is opened.
+- `AppNav`'s `built: false` branch is *still* dead. Slice 11 left it in on the
+  grounds that "slice 12 adds Questions and will want it again" — it does not:
+  questions are read on the lecture, note and course pages, and there is no
+  `/questions` route at all (see the decision above). Nothing in the build order
+  after this adds a sixth nav column either. Delete it.
+- `getUnresolvedQuestions` reads **every** question in the workspace, resolves
+  every answer and every note ref, and the course page then filters that list
+  down to one course in memory. It is the same trade `/tasks`, `/courses` and
+  `modules/study` already make, and at one student's scale it is a few hundred
+  rows — but it is the first read that gets slower in proportion to *the whole
+  semester* rather than to what is on screen. The indexes to push it into SQL
+  are in migration 008; the query is not written.
+- Two *simultaneous* presses of Answer on a question that has never been
+  answered could create two answer blocks, exactly as slice 11 noted for
+  Summarise, and for exactly the same reason: the link lives in
+  `derivation_sources`, so there is no column to put a unique index on.
+  Sequential runs are safe — the second finds the first and reuses it.
+- A question asked in a note that is filed under no course lands under
+  "Not filed under a unit" on *no* course page, so it is invisible everywhere
+  except the note it was asked in. `getUnresolvedQuestions` returns it with
+  `courseId: null` and every screen that groups by course drops it. Filing the
+  note fixes it retroactively — a question's course and unit are read from the
+  note every time, never copied — but nothing tells you the question is stranded.
+- Editing a question is not possible, and `readAnswerSources` quietly depends on
+  that: the question block is on the answer's receipt, so if anything ever *did*
+  edit one, the answer would go stale with the question listed as "what changed
+  in the note" — which is not where it belongs. `getReviewQueue` already lifts
+  the question block out of the source list, so the screen is safe; the day a
+  Rephrase button exists, this is the thing to check first.

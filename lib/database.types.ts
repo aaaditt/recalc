@@ -457,6 +457,75 @@ export type Database = {
         }
         Relationships: []
       }
+      question_anchors: {
+        Row: {
+          anchored_block_id: string
+          question_block_id: string
+        }
+        Insert: {
+          anchored_block_id: string
+          question_block_id: string
+        }
+        Update: {
+          anchored_block_id?: string
+          question_block_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "question_anchors_anchored_block_id_fkey"
+            columns: ["anchored_block_id"]
+            isOneToOne: false
+            referencedRelation: "blocks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "question_anchors_question_block_id_fkey"
+            columns: ["question_block_id"]
+            isOneToOne: false
+            referencedRelation: "blocks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      questions: {
+        Row: {
+          block_id: string
+          created_at: string
+          id: string
+          status: string
+          workspace_id: string
+        }
+        Insert: {
+          block_id: string
+          created_at?: string
+          id?: string
+          status?: string
+          workspace_id: string
+        }
+        Update: {
+          block_id?: string
+          created_at?: string
+          id?: string
+          status?: string
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "questions_block_id_fkey"
+            columns: ["block_id"]
+            isOneToOne: false
+            referencedRelation: "blocks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "questions_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sessions: {
         Row: {
           course_id: string

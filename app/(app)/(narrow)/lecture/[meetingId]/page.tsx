@@ -12,11 +12,17 @@ import {
   setLectureUnitAction,
   summariseLectureNoteAction,
 } from './actions';
+import {
+  answerQuestionAction,
+  askQuestionAction,
+  setQuestionResolvedAction,
+} from '../../questions/actions';
 import { toggleTaskDoneAction } from '../../tasks/actions';
 import { AttachFiles } from '@/components/files/attach-files';
 import { FileGrid } from '@/components/files/file-grid';
 import { NoteEditor } from '@/components/notes/note-editor';
 import { NoteSummary } from '@/components/notes/note-summary';
+import { QuestionList } from '@/components/questions/question-list';
 import { TaskItem } from '@/components/tasks/task-item';
 import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -32,6 +38,7 @@ import { getCourses, getMeeting, getSyllabusUnits } from '@/modules/courses';
 import { getFilesForMeeting } from '@/modules/files';
 import { getGoogleAccount } from '@/modules/google';
 import { getNoteDocument } from '@/modules/notes';
+import { getQuestionsForNote } from '@/modules/questions';
 import { getNoteSummary } from '@/modules/recalc';
 import { getTasksForMeeting } from '@/modules/tasks';
 import { ensureWorkspace } from '@/modules/workspaces';
@@ -76,7 +83,7 @@ export default async function LecturePage({
   const course = index === -1 ? null : courses[index];
   const colour = colourForCourse(course?.colour, Math.max(index, 0));
 
-  const [units, note, summary, tasks, files, google] = await Promise.all([
+  const [units, note, summary, questions, tasks, files, google] = await Promise.all([
     course ? getSyllabusUnits(supabase, course.id) : Promise.resolve([]),
     meeting.note_block_id
       ? getNoteDocument(supabase, workspace.id, meeting.note_block_id)
@@ -84,6 +91,9 @@ export default async function LecturePage({
     meeting.note_block_id
       ? getNoteSummary(supabase, workspace.id, meeting.note_block_id)
       : Promise.resolve(null),
+    meeting.note_block_id
+      ? getQuestionsForNote(supabase, workspace.id, meeting.note_block_id, zone)
+      : Promise.resolve([]),
     getTasksForMeeting(supabase, workspace.id, meeting.id),
     getFilesForMeeting(supabase, workspace.id, meeting.id),
     // Reading the connection is a plain table read — it never touches Google —
@@ -144,11 +154,13 @@ export default async function LecturePage({
           save={saveLectureNoteAction.bind(null, meeting.id)}
           makeTask={addLectureTaskAction.bind(null, meeting.id)}
           saveImage={saveImage}
+          askQuestion={askQuestionAction}
         />
         <p className="pt-2 text-12 text-muted">
           Select a sentence and press <span className="font-mono">＋ Task</span> to turn it
-          into a deadline that remembers where it came from. Paste a screenshot and it
-          lands in Files below.
+          into a deadline that remembers where it came from, or{' '}
+          <span className="font-mono">? Ask</span> to put a question against it. Paste a
+          screenshot and it lands in Files below.
         </p>
       </Section>
 
@@ -188,12 +200,12 @@ export default async function LecturePage({
       </Section>
 
       <Section label="Questions">
-        <Card>
-          <EmptyState
-            title="No questions yet"
-            description="Questions asked during this lecture, and whether they were ever answered. Slice 12."
-          />
-        </Card>
+        <QuestionList
+          questions={questions}
+          timeZone={zone}
+          answerIt={answerQuestionAction}
+          setResolved={setQuestionResolvedAction}
+        />
       </Section>
 
       <Section label="Tasks">
