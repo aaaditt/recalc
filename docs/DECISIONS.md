@@ -1715,6 +1715,135 @@ index on the vectors for the semantic one; the `current_block_embeddings` view;
 and four functions. HNSW rather than ivfflat because ivfflat's lists mean
 nothing until the table has rows in it, and this table starts empty.
 
+## 2026-08-27 — Gmail extends the `google_accounts` row; migration 010 adds no column to it
+Because slice 09 was right: it put `last_history_id`, `synced_at` and `status`
+on `google_accounts` with the comment "unused until slice 14; the column is
+here because this table is shared and adding it later means another migration".
+All three were waiting, so migration 010 creates exactly one table,
+`email_messages`, and touches nothing that already existed. Connecting Gmail on
+an account that already has Drive goes through `repo.findByAddress` →
+`repo.upsert`, which is the path slice 09 already built for reconnecting: it
+finds the row by `(user_id, lower(address))` and updates it. The scope is
+**unioned** with what is already stored rather than overwriting it, so
+connecting one feature can never drop the other even if Google's response comes
+back narrower than `include_granted_scopes=true` implies.
+Instead of: a `gmail_accounts` table, which would have meant two refresh tokens
+for one Google account, two connect flows, two things to revoke, and two rows
+that disagree about whether the account still works.
+
+## 2026-08-27 — One `/api/auth/google/start`, with `?feature=gmail`, and a cookie to remember which
+Because it is one OAuth client, one registered redirect URI and one
+`google_accounts` row per Google account. The only thing that differs between
+connecting Drive and connecting Gmail is the `scope` parameter, and Google's
+`include_granted_scopes=true` — which slice 09 already set, and said in a
+comment was for exactly this — makes the second grant additive. The callback
+needs to know which flow it is finishing, for the scope it insists on, the
+address lookup it uses and the settings page it returns to, so `start` sets a
+second httpOnly cookie beside the state one. A missing cookie means Drive,
+which is what the single button did for five slices.
+Instead of: `/api/auth/gmail/start` and a second callback, which would be two
+redirect URIs to register, two state checks to get right, and two places for
+"connecting Gmail made a second row" to be introduced.
+
+## 2026-08-27 — A Gmail-only account asks Gmail who it is, not Drive
+Because `drive.getAccountAddress` reads `about.get`, which needs a Drive scope,
+and an account that granted only `gmail.readonly` does not have one.
+`users.getProfile` answers the same question under the scope we do have, and
+returns nothing but the address and the mailbox's `historyId`. It lives in
+`modules/google/profile.ts` rather than in `modules/gmail` because
+`modules/google` owns `google_accounts` — including the fact of which address a
+row is — and if it asked `modules/gmail` for an address while `modules/gmail`
+asked it for a token, the two would import each other in a circle.
+
+## 2026-08-27 — Sync's incremental claim is defended at the endpoint, not at the row count
+Because the failure this slice exists to prevent is invisible in the data. A
+sync that re-listed thirty days of mail every hour and discarded what it already
+had would leave `email_messages` looking identical and the API quota looking
+very different. So `modules/gmail/incremental-sync.test.ts` asserts against the
+URL: after the first sync, `messages.list` — the call that reads the mailbox —
+is never requested again, and `history.list` is requested with exactly the
+stored `last_history_id`. If sync ever degrades into a full re-read, that is the
+assertion that fails. The endpoints are exported from the module index for this
+reason and no other.
+
+## 2026-08-27 — Every listing path is bounded twice: by pages and by messages
+Because "fall back to a bounded re-sync" is only a promise if the bound is a
+number. `MAX_PAGES_PER_SYNC = 4` and `PAGE_SIZE = 100` cap a single run at four
+requests and four hundred ids, and both the 30-day window loop and the
+`history.list` loop stop at them regardless of how many page tokens Google keeps
+handing back. The test proves it by making the fake Gmail page forever and
+asserting the call count. The expired-cursor fallback re-uses the *same* bounded
+window a first sync uses, and `console.warn`s that it happened — a fallback
+nobody can see is a fallback that quietly becomes the normal path.
+
+## 2026-08-27 — `format=metadata`, so there is nowhere for a body to be stored
+Because prompts/14-email-connect.md says "Do not store full message bodies yet",
+and the strongest way to keep that is to never receive one. Gmail's
+`format=metadata` returns the headers asked for (From, Subject, Date), the
+snippet and `internalDate`, and no body at all. `internalDate` is preferred over
+the `Date:` header because the sender writes the header and the server writes
+`internalDate`. Nothing in `modules/gmail` logs, and no error built there
+contains more than an HTTP status and the name of the call — a Gmail error body
+is not supposed to carry message content, and "not supposed to" is not a good
+enough reason to put one in a log line. The cron route's JSON leaves out the
+mail address as well, because that response lands in a deploy log.
+
+## 2026-08-27 — The row is written first, the block second, and only for a row that was new
+Because the pair has to stay consistent under a re-sync. `repo.insertOne` is an
+`on conflict do nothing` against `email_messages_account_msg_key` and returns
+null when the message was already there; a block is created only when a row
+actually comes back. So a message seen twice creates neither a second row nor an
+orphaned `email` block — and because `existingProviderIds` filters first, a
+message already stored is not even fetched from Gmail again.
+Instead of: creating the block first and then inserting, which leaves a stray
+block behind every time two syncs race.
+
+## 2026-08-27 — A dead refresh token is a `SyncResult`, not an exception
+Because prompts/14-email-connect.md point 5 is explicit — "Never throw a 500 at
+me for this" — and a revoked token is a thing that happens on a password change
+or after six months, not a bug. `getGmailAccessToken` marks the row
+`needs_reconnect` and throws `GoogleReconnectRequired`; `syncAccount` catches it
+and returns `{ outcome: 'needs_reconnect' }` with a sentence. Nothing above
+`modules/gmail` has to know how a token dies: the settings page reads `status`
+and shows one quiet accent banner, and the cron route counts outcomes. A partial
+failure part-way through fetching messages deliberately does **not** move the
+cursor — the next run asks for the same range and the unique index skips what
+already landed, because fetching a message twice is cheaper than losing one.
+
+## 2026-08-27 — `fetchImpl` is threaded through, rather than stubbing the global `fetch`
+Because the test talks to the real Supabase project, and the Supabase client
+uses `fetch` too — a `vi.stubGlobal('fetch', …)` would fake the database along
+with Google. `syncAccount` takes an optional `fetchImpl` and passes it to both
+the token refresh and every Gmail call, so a test can answer four Google
+endpoints and nothing else. App code never passes it. This is the same shape as
+slice 13's `searchWorkspace(db, ctx, query, { embed })`: the dependency that is
+awkward to have for real is an argument, and the default is the real one.
+
+## 2026-08-27 — The cron entry is four lines of `vercel.json` and a shared secret
+Because (rule 10): nothing was installed. `vercel.json` gets a `crons` entry
+pointing at `/api/cron/sync-email` hourly — the documented, dependency-free way
+to schedule on Vercel. The route runs with no session, so it uses the
+service-role client and asks `modules/google` which users have a Gmail
+connection; that is exactly why it requires `Authorization: Bearer $CRON_SECRET`
+before it will do anything, and returns 503 rather than a cheerful 200 when
+`CRON_SECRET` is unset, because an unconfigured job that succeeds looks exactly
+like a working one. `CRON_SECRET` is read from `process.env` rather than added
+to `lib/env.server.ts`, following "Server env vars for future slices are
+optional in lib/env.server.ts" — the app must boot, and "Sync now" must work,
+on a machine that has never deployed.
+
+## 2026-08-27 — One migration, no dependencies, in slice 14
+Because (rule 10): nothing was installed. Gmail is reached with plain `fetch`
+against its documented REST endpoints, exactly as slice 09 decided for Drive —
+four kinds of GET do not justify `googleapis`, and there is no POST, PUT, PATCH
+or DELETE anywhere in `modules/gmail/gmail.ts`, which is what makes "read-only"
+structural rather than a promise. `supabase/migrations/010_email.sql` adds
+`email_messages` with RLS enabled and all four policies (rule 8), ownership
+flowing through `google_account_id` to `google_accounts.user_id` the same way
+`files`' flows through its workspace; a unique index on
+`(google_account_id, provider_msg_id)` that makes a re-sync idempotent in the
+database rather than only in the service; and three read indexes.
+
 ---
 
 ## Noticed, not fixed
@@ -2150,3 +2279,66 @@ Things spotted outside the current slice. Do not fix them mid-slice; write them 
   or a `current_version` column maintained by a trigger — and the second of
   those is a new fact that can disagree with `blocks.version`, so think hard
   before reaching for it.
+- **No Gmail account has ever been connected on this machine.** Same gap as
+  slices 09–13 and for the same reason: there is no Google account here and no
+  way to click through a consent screen, so nothing past `exchangeCode` has run
+  against Google. Everything from the stored refresh token onwards is proved
+  against the real database with only Google's network faked
+  (`modules/gmail/incremental-sync.test.ts`, 10 tests), and the URL the browser
+  would be sent to is proved to carry `gmail.readonly` and nothing that could
+  send, label or delete (`modules/google/gmail-scope.test.ts`). What is
+  unverified is whether Google's *real* `history.list` behaves as documented —
+  in particular whether the `historyId` it returns on the last page is the right
+  cursor to store, and how long the history window actually is for these two
+  mailboxes before the bounded fallback starts firing.
+- `modules/google`'s `find`, `getGoogleAccount`, `getDriveAccessToken`,
+  `getPickerToken` and `disconnectGoogleAccount` still mean "*the* account" —
+  they read the oldest row and ignore the rest. That was true before slice 14
+  and is untouched by it (rule 9), but it is now wrong in a way it was not
+  before: connect two Google accounts for Gmail and Drive silently picks the
+  first of them for the picker, uploads and every attachment. Slice 14 added
+  `listGoogleAccounts`, `getGoogleAccountById`, `disconnectGoogleAccountById`
+  and `getGmailAccessToken`, all of which name an account; the Drive half needs
+  the same treatment, plus a way for `/settings/drive` and the lecture page to
+  say which account a file went to. This is the biggest sharp edge the slice
+  leaves behind.
+- `/settings/drive` still shows only the first account, for the same reason, and
+  its Disconnect button disconnects "the" account rather than the one on screen.
+  On a machine with two Google accounts connected that button is a trap.
+- The `needs_reconnect` banner is on `/settings/email` and nowhere else. A dead
+  token is invisible from `/today` or the calendar until you happen to open
+  settings, so mail can silently stop arriving for a week. Putting it in the
+  `(app)` layout beside slice 11's review badge is the right fix, and that is
+  slice 03/11's file (rule 9). The layout already makes one query per render;
+  this would be a second.
+- `email_messages` has no `workspace_id`, following docs/SCHEMA.md's shape
+  exactly, so ownership is read through `google_account_id → google_accounts.
+  user_id`. The `email` block it creates *does* have one, resolved by
+  `ensureWorkspace` at sync time. A user with two workspaces would therefore
+  have all their mail land in the first — there is one workspace per user today
+  and nothing in the build order changes that, but the mismatch is real and it
+  is where a second workspace would first hurt.
+- `getEmailAccounts` reads a count and the ten most recent messages **per
+  account, one query at a time**, the same trade `/tasks`, `/courses` and
+  `getUnresolvedQuestions` already make. Correct at two accounts; it is a loop
+  over rows, not a join.
+- `syncAccount` fetches messages one at a time, sequentially — up to four
+  hundred `messages.get` round trips on a first sync of a busy mailbox, which
+  will be slow enough to notice behind the "Sync now" button. Gmail has a batch
+  endpoint and the AI SDK is not involved, so this is safe to parallelise a few
+  at a time; it was left sequential because boring code that is obviously
+  correct beat fast code on the first sync of the slice.
+- Reconnecting Drive on an account that has already granted Gmail will store
+  `gmail.readonly` in `granted_scopes` again, because slice 09's path believes
+  the token response and `include_granted_scopes=true` puts the union in it.
+  That is correct today and would be wrong the day a scope needs *removing* from
+  an account without disconnecting it — there is no path that narrows
+  `granted_scopes`, only Disconnect.
+- The cron job runs hourly and syncs every user with a Gmail connection in one
+  request. At one user that is right; at any scale it is a single serverless
+  invocation doing unbounded work with a fixed timeout, and the honest shape is
+  a queue. Worth remembering before this is ever pointed at more than one
+  mailbox.
+- `email_proposals` from docs/SCHEMA.md is deliberately not created. It is slice
+  15's table and slice 15's migration; creating it empty here would have been a
+  column nobody reads and a policy nobody exercises.

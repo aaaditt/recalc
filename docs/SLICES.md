@@ -19,7 +19,7 @@ column as you go — this is how a fresh session knows where we are.
 | 11 | **Recalc engine** — derivations, first recipe, /review queue | done |
 | 12 | **Questions** — ask-about-selection, open questions per course | done |
 | 13 | Search — pgvector over versioned embeddings | done |
-| 14 | Email connect — Gmail OAuth, incremental sync | not started |
+| 14 | Email connect — Gmail OAuth, incremental sync | done |
 | 15 | Email extraction — proposals queue | not started |
 
 ## Why this order
@@ -74,6 +74,24 @@ block's stays physically in the table and cannot be reached by any query path
 provider's vectors rank anything sensibly — and note that `vector(1536)` is a
 hard width, so the `embed` role wants OpenAI's `text-embedding-3-small` rather
 than a Gemini model, which returns 768. See `docs/DECISIONS.md`.
+
+Slice 14 needs the same one-off Google setup slice 09 did, plus one thing more:
+the OAuth consent screen has to list `gmail.readonly` (SETUP.md section 3, point
+6) and it has to be **in production, not testing** — an app left in testing
+issues refresh tokens that die after seven days, which is exactly the failure
+this slice spends its effort making survivable. **No Gmail account has ever been
+connected on this machine**, so nothing past the consent screen has been seen
+working for real. What *is* proved against the real database, with only Google's
+network faked (`modules/gmail/incremental-sync.test.ts`, 10 tests): the first
+sync pulling a bounded 30-day window and giving every message an `email` block;
+the second sync calling `history.list` from the stored cursor and **never
+touching the mailbox listing endpoint again**; a too-old history id falling back
+to a bounded re-sync and logging it without a word of anyone's mail in the log
+line; a revoked refresh token setting `status = 'needs_reconnect'` and returning
+rather than throwing; and the same message arriving twice duplicating neither the
+row nor its block. `modules/google/gmail-scope.test.ts` proves the URL this app
+sends a browser to asks for `gmail.readonly` and nothing that could send, label
+or delete. Connect an account on `/settings/email` and press **Sync now** twice.
 
 ## If you run out of steam
 

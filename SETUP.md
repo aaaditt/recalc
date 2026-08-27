@@ -105,6 +105,13 @@ ENCRYPTION_KEY=
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 NEXT_PUBLIC_GOOGLE_PICKER_API_KEY=
+
+# Optional until slice 14, and only needed on Vercel. The hourly email sync
+# (vercel.json -> /api/cron/sync-email) runs with no signed-in user, so the
+# route refuses anything that does not present this. Generate it the same way
+# as ENCRYPTION_KEY. Without it the scheduled sync is simply off — "Sync now"
+# on /settings/email still works.
+CRON_SECRET=
 ```
 
 ---

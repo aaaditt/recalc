@@ -58,8 +58,23 @@ export type TokenResponse = {
   expiresInSeconds: number;
 };
 
-async function postToken(body: URLSearchParams): Promise<TokenResponse> {
-  const response = await fetch(TOKEN_ENDPOINT, {
+/**
+ * The `fetch` these calls go out on.
+ *
+ * Injectable so a test can prove what happens when Google says `invalid_grant`
+ * without a Google account, a network, or a global stub that would also break
+ * the Supabase client (slice 14). App code never passes it.
+ */
+export type GoogleFetch = (
+  url: string,
+  init?: RequestInit
+) => Promise<Response>;
+
+async function postToken(
+  body: URLSearchParams,
+  fetchImpl: GoogleFetch = fetch
+): Promise<TokenResponse> {
+  const response = await fetchImpl(TOKEN_ENDPOINT, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
     body,
@@ -116,7 +131,8 @@ export async function exchangeCode(
 /** A fresh access token from the stored refresh token. Good for about an hour. */
 export async function refreshAccessToken(
   credentials: Pick<GoogleCredentials, 'clientId' | 'clientSecret'>,
-  refreshToken: string
+  refreshToken: string,
+  fetchImpl: GoogleFetch = fetch
 ): Promise<TokenResponse> {
   return postToken(
     new URLSearchParams({
@@ -124,7 +140,8 @@ export async function refreshAccessToken(
       client_id: credentials.clientId,
       client_secret: credentials.clientSecret,
       grant_type: 'refresh_token',
-    })
+    }),
+    fetchImpl
   );
 }
 

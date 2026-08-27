@@ -376,6 +376,60 @@ export type Database = {
           },
         ]
       }
+      email_messages: {
+        Row: {
+          block_id: string | null
+          created_at: string
+          google_account_id: string
+          id: string
+          provider_msg_id: string
+          received_at: string
+          sender: string
+          snippet: string | null
+          subject: string | null
+          thread_id: string
+        }
+        Insert: {
+          block_id?: string | null
+          created_at?: string
+          google_account_id: string
+          id?: string
+          provider_msg_id: string
+          received_at: string
+          sender: string
+          snippet?: string | null
+          subject?: string | null
+          thread_id: string
+        }
+        Update: {
+          block_id?: string | null
+          created_at?: string
+          google_account_id?: string
+          id?: string
+          provider_msg_id?: string
+          received_at?: string
+          sender?: string
+          snippet?: string | null
+          subject?: string | null
+          thread_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_messages_block_id_fkey"
+            columns: ["block_id"]
+            isOneToOne: false
+            referencedRelation: "blocks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_messages_google_account_id_fkey"
+            columns: ["google_account_id"]
+            isOneToOne: false
+            referencedRelation: "google_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       files: {
         Row: {
           block_id: string | null

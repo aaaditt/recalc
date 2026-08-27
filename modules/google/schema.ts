@@ -36,7 +36,34 @@ export const FORBIDDEN_SCOPES = [
   'https://www.googleapis.com/auth/drive.readonly',
   'https://www.googleapis.com/auth/drive.metadata',
   'https://www.googleapis.com/auth/drive.metadata.readonly',
+  // Slice 14. Everything Gmail offers beyond reading is on this list, because
+  // prompts/14-email-connect.md's first constraint is "Read-only. The app never
+  // sends, replies to, deletes, or labels anything" — and the way to keep that
+  // promise is to be unable to. `gmail.modify` covers labelling and archiving;
+  // `mail.google.com` covers deleting; `gmail.send` and `gmail.compose` cover
+  // sending. None of them is ever requested.
+  'https://www.googleapis.com/auth/gmail.modify',
+  'https://www.googleapis.com/auth/gmail.send',
+  'https://www.googleapis.com/auth/gmail.compose',
+  'https://www.googleapis.com/auth/gmail.insert',
+  'https://www.googleapis.com/auth/gmail.labels',
+  'https://www.googleapis.com/auth/gmail.settings.basic',
+  'https://www.googleapis.com/auth/gmail.settings.sharing',
+  'https://mail.google.com/',
 ] as const;
+
+/**
+ * Read a message, and nothing else.
+ *
+ * Restricted, in Google's classification (docs/SCHEMA.md, "Google scopes — and
+ * why Drive is easier than Gmail"): fine under 100 users, but the consent
+ * screen shows an "unverified app" warning that has to be clicked through.
+ * That is the price of reading mail at all, and it is why Drive shipped first.
+ */
+export const GMAIL_READONLY_SCOPE = 'https://www.googleapis.com/auth/gmail.readonly';
+
+/** Every scope slice 14 asks for. Exactly one. */
+export const GMAIL_SCOPES = [GMAIL_READONLY_SCOPE] as const;
 
 // ---------------------------------------------------------------------------
 
@@ -65,7 +92,7 @@ export const googleAccountSchema = z.object({
  */
 export const publicGoogleAccountSchema = googleAccountSchema
   .omit({ refresh_token_enc: true, user_id: true })
-  .extend({ canUseDrive: z.boolean() });
+  .extend({ canUseDrive: z.boolean(), canUseGmail: z.boolean() });
 
 /** One file's metadata as Drive v3 reports it. */
 export const driveFileSchema = z.object({

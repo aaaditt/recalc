@@ -15,12 +15,26 @@ export {
   openDriveFile,
   openDriveThumbnail,
   requestedScopes,
+  // Slice 14 — the Gmail half of the same connection.
+  scopesFor,
+  listGoogleAccounts,
+  getGoogleAccountById,
+  disconnectGoogleAccountById,
+  getGmailAccessToken,
+  recordGmailSync,
+  markGoogleAccountNeedsReconnect,
+  requestedGmailScopes,
+  listUserIdsWithGmail,
+  type GoogleFeature,
 } from './service';
+export type { GoogleFetch } from './oauth';
 export { ROOT_FOLDER_NAME } from './drive';
 export { authorizeUrl } from './oauth';
 export {
   DRIVE_FILE_SCOPE,
   DRIVE_SCOPES,
+  GMAIL_READONLY_SCOPE,
+  GMAIL_SCOPES,
   FORBIDDEN_SCOPES,
   DriveFileGone,
   GoogleReconnectRequired,

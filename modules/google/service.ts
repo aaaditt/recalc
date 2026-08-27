@@ -5,10 +5,13 @@ import { decryptSecret, encryptSecret } from '@/lib/crypto';
 
 import * as drive from './drive';
 import * as oauth from './oauth';
+import { getGmailAddress } from './profile';
 import * as repo from './repo';
 import {
   DRIVE_FILE_SCOPE,
   DRIVE_SCOPES,
+  GMAIL_READONLY_SCOPE,
+  GMAIL_SCOPES,
   GoogleReconnectRequired,
   publicGoogleAccountSchema,
   type DriveFile,
@@ -55,10 +58,23 @@ export function googleRedirectUri(origin: string): string {
  * back; without that, any page on the internet could walk this user through
  * connecting an attacker's Google account.
  */
-export function startGoogleConnect(redirectUri: string): { url: string; state: string } {
+export function startGoogleConnect(
+  redirectUri: string,
+  // Slice 14 passes GMAIL_SCOPES. Omitting it keeps slice 09's behaviour
+  // exactly — Drive, and only Drive.
+  scopes: readonly string[] = DRIVE_SCOPES
+): { url: string; state: string } {
   const state = randomBytes(32).toString('base64url');
-  return { url: oauth.authorizeUrl(credentials(redirectUri), state), state };
+  return { url: oauth.authorizeUrl(credentials(redirectUri), state, scopes), state };
 }
+
+/** The scopes to ask for, for one feature. */
+export function scopesFor(feature: GoogleFeature): readonly string[] {
+  return feature === 'gmail' ? GMAIL_SCOPES : DRIVE_SCOPES;
+}
+
+/** Which half of the Google connection a flow is about. */
+export type GoogleFeature = 'drive' | 'gmail';
 
 /**
  * Finish the handshake: swap the code for tokens and store the connection.
@@ -71,8 +87,9 @@ export function startGoogleConnect(redirectUri: string): { url: string; state: s
 export async function completeGoogleConnect(
   db: SupabaseClient,
   userId: string,
-  input: { code: string; redirectUri: string }
+  input: { code: string; redirectUri: string; feature?: GoogleFeature }
 ): Promise<PublicGoogleAccount> {
+  const feature = input.feature ?? 'drive';
   const tokens = await oauth.exchangeCode(credentials(input.redirectUri), input.code);
 
   if (!tokens.refreshToken) {
@@ -83,17 +100,42 @@ export async function completeGoogleConnect(
   }
   // Google may grant less than was asked for — the consent screen has a
   // checkbox per scope. Believe the response, never the request.
-  if (!tokens.scopes.includes(DRIVE_FILE_SCOPE)) {
-    throw new Error('Drive access was not granted. Tick the Drive box and try again.');
+  const wanted = feature === 'gmail' ? GMAIL_READONLY_SCOPE : DRIVE_FILE_SCOPE;
+  if (!tokens.scopes.includes(wanted)) {
+    throw new Error(
+      feature === 'gmail'
+        ? 'Gmail access was not granted. Tick the "read your email" box and try again.'
+        : 'Drive access was not granted. Tick the Drive box and try again.'
+    );
   }
 
-  const address = await drive.getAccountAddress(tokens.accessToken);
+  // A Gmail-only connection has no Drive scope, so it cannot ask Drive who it
+  // is. Gmail's own profile endpoint answers the same question under
+  // gmail.readonly.
+  const address =
+    feature === 'gmail'
+      ? await getGmailAddress(tokens.accessToken)
+      : await drive.getAccountAddress(tokens.accessToken);
+
+  // THE structural requirement of slice 14: connecting Gmail on an account that
+  // already has Drive ADDS a scope to the row that is already there. It does
+  // not make a second row, and it does not drop drive.file.
+  //
+  // `include_granted_scopes=true` means Google normally returns the union
+  // itself — but "normally" is not a guarantee worth a silently lost
+  // connection, so the union is taken here as well. The cost is that a scope
+  // the user revokes on Google's side stays listed until they disconnect; the
+  // benefit is that connecting one feature can never break the other.
+  const existing = await repo.findByAddress(db, userId, address);
+  const granted = existing
+    ? [...new Set([...existing.granted_scopes, ...tokens.scopes])]
+    : tokens.scopes;
 
   const account = await repo.upsert(db, {
     user_id: userId,
     address,
     refresh_token_enc: encryptSecret(tokens.refreshToken),
-    granted_scopes: tokens.scopes,
+    granted_scopes: granted,
     status: 'ok',
   });
 
@@ -139,7 +181,52 @@ function toPublic(account: GoogleAccount): PublicGoogleAccount {
     created_at: account.created_at,
     canUseDrive:
       account.status === 'ok' && account.granted_scopes.includes(DRIVE_FILE_SCOPE),
+    canUseGmail:
+      account.status === 'ok' && account.granted_scopes.includes(GMAIL_READONLY_SCOPE),
   });
+}
+
+/** Every connected Google account. Slice 14 is the first screen with two. */
+export async function listGoogleAccounts(
+  db: SupabaseClient,
+  userId: string
+): Promise<PublicGoogleAccount[]> {
+  const accounts = await repo.list(db, userId);
+  return accounts.map(toPublic);
+}
+
+/** One account by id, or null when it is not this user's. */
+export async function getGoogleAccountById(
+  db: SupabaseClient,
+  userId: string,
+  accountId: string
+): Promise<PublicGoogleAccount | null> {
+  const account = await repo.findById(db, userId, accountId);
+  return account ? toPublic(account) : null;
+}
+
+/**
+ * Disconnect one named account, rather than "the" one.
+ *
+ * `disconnectGoogleAccount` above takes no id because slice 09 assumed a single
+ * connection. Two Gmail accounts need to be told apart, and taking the id is
+ * the only way a screen with two Disconnect buttons can mean the right one.
+ */
+export async function disconnectGoogleAccountById(
+  db: SupabaseClient,
+  userId: string,
+  accountId: string
+): Promise<void> {
+  const account = await repo.findById(db, userId, accountId);
+  if (!account) return;
+
+  try {
+    await oauth.revokeToken(decryptSecret(account.refresh_token_enc));
+  } catch {
+    // Already revoked, unreadable, or Google is down. The row still goes.
+  }
+
+  await repo.remove(db, userId, account.id);
 }
 
 /**
@@ -293,4 +380,116 @@ export async function getPickerToken(
   userId: string
 ): Promise<string> {
   return getDriveAccessToken(db, userId);
+}
+
+// ---------------------------------------------------------------------------
+// Gmail — slice 14
+//
+// The same shape as the Drive half above, with two differences: it names an
+// account rather than assuming there is one, and it hands the failure back as
+// a typed `GoogleReconnectRequired` after marking the row, because
+// prompts/14-email-connect.md is explicit that a dead refresh token is a normal
+// state and must never reach the user as a 500.
+// ---------------------------------------------------------------------------
+
+/**
+ * A fresh Gmail access token for one account, good for about an hour.
+ *
+ * Every way this can fail marks the account `needs_reconnect` first, so the
+ * settings screen can say one plain sentence instead of five different
+ * failures appearing in five places.
+ *
+ * `fetchImpl` exists so a test can make Google answer `invalid_grant` without a
+ * Google account and without stubbing the global `fetch` the Supabase client is
+ * also using. App code never passes it.
+ */
+export async function getGmailAccessToken(
+  db: SupabaseClient,
+  userId: string,
+  accountId: string,
+  fetchImpl?: oauth.GoogleFetch
+): Promise<string> {
+  const account = await repo.findById(db, userId, accountId);
+  if (!account) throw new GoogleReconnectRequired('That Google account is not connected.');
+  if (!account.granted_scopes.includes(GMAIL_READONLY_SCOPE)) {
+    throw new GoogleReconnectRequired('This Google account did not grant Gmail access.');
+  }
+
+  let refreshToken: string;
+  try {
+    refreshToken = decryptSecret(account.refresh_token_enc);
+  } catch {
+    // A changed ENCRYPTION_KEY, or a corrupted row. Reconnecting is the only
+    // fix, so say exactly that.
+    await repo.setStatus(db, account.id, 'needs_reconnect');
+    throw new GoogleReconnectRequired(
+      'The stored Google token could not be read. Connect this account again.'
+    );
+  }
+
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  if (!clientId || !clientSecret) {
+    throw new Error('GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are not set.');
+  }
+
+  try {
+    const tokens = await oauth.refreshAccessToken(
+      { clientId, clientSecret },
+      refreshToken,
+      fetchImpl
+    );
+    if (account.status !== 'ok') await repo.setStatus(db, account.id, 'ok');
+    return tokens.accessToken;
+  } catch (error) {
+    if (error instanceof GoogleReconnectRequired) {
+      await repo.setStatus(db, account.id, 'needs_reconnect');
+    }
+    throw error;
+  }
+}
+
+/**
+ * Remember where Gmail's history had got to, and when we last looked.
+ *
+ * The account is re-read by id under the user id first, so a caller cannot move
+ * somebody else's cursor by passing an id it found somewhere.
+ */
+export async function recordGmailSync(
+  db: SupabaseClient,
+  userId: string,
+  accountId: string,
+  cursor: { lastHistoryId: string; syncedAt: string }
+): Promise<void> {
+  const account = await repo.findById(db, userId, accountId);
+  if (!account) return;
+  await repo.setSyncCursor(db, account.id, cursor);
+}
+
+/** Mark a connection as needing the user's attention. Never throws at a screen. */
+export async function markGoogleAccountNeedsReconnect(
+  db: SupabaseClient,
+  userId: string,
+  accountId: string
+): Promise<void> {
+  const account = await repo.findById(db, userId, accountId);
+  if (!account) return;
+  await repo.setStatus(db, account.id, 'needs_reconnect');
+}
+
+/** The scopes the Gmail connect flow asks for, for the settings screen to show. */
+export function requestedGmailScopes(): readonly string[] {
+  return GMAIL_SCOPES;
+}
+
+/**
+ * Every user with a Gmail connection.
+ *
+ * For the cron job only: it runs on a schedule with no session, so it has no
+ * "me" to scope a query by. One user today; the query is written as though
+ * there were more, because a job that assumes one is a job that quietly syncs
+ * the wrong mailbox the day there are two.
+ */
+export async function listUserIdsWithGmail(db: SupabaseClient): Promise<string[]> {
+  return repo.userIdsWithScope(db, GMAIL_READONLY_SCOPE);
 }
