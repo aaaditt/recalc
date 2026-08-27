@@ -1563,6 +1563,158 @@ cascade trigger from migration 001 is untouched: an answer goes stale through
 the same `mark_derivations_stale()` a summary does, and there is a test that
 proves it (`modules/recalc/answer-staleness.test.ts`).
 
+## 2026-08-27 — The version predicate is stated once, in a view, and every read path goes through it
+Because: docs/SCHEMA.md says "query only rows where `block_embeddings.version =
+blocks.version`", and a predicate that has to be remembered in three queries is
+a predicate that will be forgotten in a fourth — at which point search returns a
+sentence the user deleted five minutes ago, which is the exact bug this product
+exists to prevent. So migration 009 defines `current_block_embeddings` as that
+join, `with (security_invoker = on)` so it is not a hole around RLS, and
+`search_blocks` reads the view rather than the table. `modules/search/repo.ts`
+has no `select` that could reach a vector any other way: `listEmbeddingRows`
+deliberately selects only `block_id, version, model, created_at`.
+Instead of: repeating `and e.version = b.version` in each query, or enforcing it
+in TypeScript — a second copy of the one rule the slice exists to keep.
+
+## 2026-08-27 — A stale embedding row is left in the table, not deleted on write
+Because: "we delete the old row when we write the new one" is a promise that
+holds for exactly as long as every write path keeps making it. "The old row
+cannot be read" is a property of the schema and holds even if the cleanup job
+never runs, even if a row is written by a script, even if a version is bumped
+from the Supabase table editor. The keying — `primary key (block_id, version)` —
+is what makes re-embedding an INSERT of a new row rather than an UPDATE of the
+old one, so the old vector survives by construction and is dead by construction.
+`modules/search/search-staleness.test.ts` asserts both halves in the same test:
+the version-1 row is still physically in `block_embeddings`, and the block does
+not come back for a query that is a near-exact match for it.
+Instead of: deleting on write, which would make the test pass for a weaker
+reason and would tie correctness to a job running.
+
+## 2026-08-27 — The re-embedding queue is derived, not a table and not a trigger
+Because: a block needs a new vector exactly when it has no row at its *current*
+version — which is the same version comparison the whole slice turns on, asked
+the other way round. Bumping a version therefore enqueues the block by
+definition: nothing is written, nothing can be missed, and the queue cannot
+drift out of step with the truth. `pending_embeddings(workspace, limit)` is that
+anti-join, and "only changed blocks get re-embedded" is not a rule the indexer
+applies but a fact about what comes back — an untouched paragraph already has a
+row at its current version and never appears.
+Instead of: an `embedding_queue` table with an enqueueing trigger, mirroring
+slice 11's `mark_derivations_stale()`. That trigger has something to write that
+cannot be recomputed (a *status*, which records that a human has not yet looked
+at a derivation); this one would not, and would only add a second source of
+truth plus an at-least-once/at-most-once problem. Slice 11 also cannot delete
+what it flags; this one must not, so a trigger that removed the stale row would
+break the control case above.
+
+## 2026-08-27 — The full-text half reads live blocks; only the vector half needs guarding
+Because: prompts/13-search.md asks for both halves to be constrained to the
+version match, and the lexical half satisfies it in the only way it can — it
+reads `blocks` itself, so the words it matches ARE the current version's words.
+Editing a sentence makes the old wording unmatchable in the same statement that
+saves the new one, which is what makes "a passage I edited five minutes ago is
+already findable in its new form" true without waiting for a model. There is no
+versioned side table on that side to be stale. The vector half is the one with a
+derived artefact, and it reads the view.
+Instead of: constraining the lexical half to blocks that happen to have a
+current embedding, which would have made search return nothing at all on a
+machine with no provider key — this one — and would have made a freshly edited
+paragraph unfindable by its new words until a model had been paid to read it.
+
+## 2026-08-27 — Hybrid merging is reciprocal rank fusion, in SQL
+Because: `ts_rank` and cosine distance are not on the same scale and never will
+be, so any weighted blend of the two numbers is a magic constant that has to be
+re-tuned every time the corpus or the embedding model changes. Ranks are
+comparable. Each half contributes `1 / (60 + its rank)` and the two are added,
+which is the standard formulation; 60 is the standard damping. It is done in one
+SQL statement so the two halves are limited, merged and ordered before anything
+crosses the wire.
+Instead of: two round trips merged in TypeScript, which would have meant
+fetching both candidate sets in full and would have put the ranking — the part
+that decides what the user sees — outside the file that owns the predicate.
+
+## 2026-08-27 — `search_blocks`, `pending_embeddings` and `delete_stale_embeddings` are SQL functions, and this is the first `rpc` in the project
+Because: all three are joins or anti-joins between `block_embeddings` and
+`blocks`, and PostgREST's query builder cannot express any of them — there is no
+way to say "where this table's version equals that table's version" through
+`.eq()`. They are `security invoker` with `search_path = ''` and every object
+schema-qualified, the same hardening migration 001 gives
+`mark_derivations_stale()`, so RLS still applies as the signed-in user and the
+functions cannot be hijacked by an object in another schema.
+Instead of: reading every block and every embedding into Node and joining them
+there, which would move the predicate into the language where it is easiest to
+forget and would read the whole workspace to answer one query.
+
+## 2026-08-27 — `modules/agents` gains `embedWithRole`, the embedding twin of `generateWithRole`
+Because: CLAUDE.md's Never rule 6 and `no-provider-sdk.test.ts` between them mean
+the `ai` package may not be imported outside `modules/agents`, so what the search
+module holds is a *function* — strings in, vectors out — rather than an embedding
+model. That is the same seam slice 11 built for the chat roles and it buys the
+same thing: `indexWorkspace` and `searchWorkspace` both take an `embed` option,
+and the slice's test substitutes one built on the AI SDK's own
+`MockEmbeddingModelV4`, so all of the indexing and all of the searching runs for
+real against the real database with only the provider's network faked.
+Instead of: `getModel(db, userId, 'embed')` returning a model that the search
+module then calls `embed()` on — which would have needed `import { embed } from
+'ai'` inside `modules/search` and failed the test that guards rule 6.
+
+## 2026-08-27 — Migration 009 adds `model` and `created_at`, which SCHEMA.md does not list
+Because: vectors produced by two different embedding models are not comparable
+at all, so a row has to say which one produced it — without that column, changing
+the embed role in Settings silently corrupts every distance in the table with no
+way to tell which rows are which. `created_at` is the search screen's "indexed 3
+minutes ago". Both are the same kind of addition migration 006 made with
+`key_hint` and migration 007 made with `source_text`: SCHEMA.md gives the shape,
+a slice adds what that shape turns out to need.
+Instead of: inferring the model from `agent_profiles`, which records what the
+role holds *now*, not what wrote a row six weeks ago.
+
+## 2026-08-27 — Search is a GET with `?q=`, and the only client component is the index button
+Because: a search that is a URL is linkable, back-navigable, refreshable and
+prefetchable, and a plain `<form action="/search">` needs no JavaScript at all —
+which is what "Server Components by default" is for. The one thing that genuinely
+cannot be a form post is "Update the index": it calls a model provider and takes
+seconds, and a page sitting there saying nothing reads as broken, so
+`components/search/index-button.tsx` is a leaf `'use client'` with a
+`useTransition`, exactly like `components/questions/question-card.tsx`.
+Instead of: a client-side search box with debounced fetches, which would have
+meant a loading state on primary content (docs/DESIGN.md, principle 3) and a
+search you cannot send to yourself.
+
+## 2026-08-27 — Search is the sixth nav destination, and six is the limit
+Because: search has to be reachable from every screen or it is not search, and
+the bottom bar is the only chrome this app has. Six columns at 390px is 65px
+each, which still fits a 20px icon over a 12px label — docs/DESIGN.md's floor —
+and is comfortably past the 44px tap target. `AppNav`'s comment now says six is
+the limit; a seventh destination needs a different pattern, not a narrower
+column.
+Instead of: a search icon in a top bar, which docs/DESIGN.md specifies at 56px
+but which this app has never built and which would be a whole piece of chrome
+introduced sideways by a slice about embeddings.
+
+## 2026-08-27 — A hit that does not resolve to a note is dropped from the results
+Because: every result on the screen is a link, and a result you cannot open is
+not a result. `getNoteRefs` resolves a paragraph to the document it lives in and
+the page that opens it; blocks that hang off nothing — a `summary`, an `answer`,
+a `question` — have no note to open, so they are filtered out in
+`modules/search/service.ts` after the query rather than shown as dead rows.
+Instead of: showing them under a "not in a note" heading, which would put
+AI-written text into a screen whose whole promise is "anything **I** have
+written", and would list every summary twice over beside the paragraphs it was
+made from.
+
+## 2026-08-27 — One migration, no dependencies, in slice 13
+Because (rule 10): nothing was installed — pgvector was already enabled by
+migration 001 (`create extension if not exists vector with schema extensions`)
+and is deliberately not enabled again, which is why every vector type and
+operator in 009 is spelled `extensions.`. `supabase/migrations/009_search.sql`
+adds `block_embeddings` with RLS enabled and all four policies (rule 8),
+ownership flowing through the block exactly as `question_anchors`' flows through
+its question block; a GIN index on `blocks` for the lexical half and an HNSW
+index on the vectors for the semantic one; the `current_block_embeddings` view;
+and four functions. HNSW rather than ivfflat because ivfflat's lists mean
+nothing until the table has rows in it, and this table starts empty.
+
 ---
 
 ## Noticed, not fixed
@@ -1936,3 +2088,65 @@ Things spotted outside the current slice. Do not fix them mid-slice; write them 
   in the note" — which is not where it belongs. `getReviewQueue` already lifts
   the question block out of the source list, so the screen is safe; the day a
   Rephrase button exists, this is the thing to check first.
+- **No vector in this project has ever been produced by a real model.** Same gap
+  as slices 10, 11 and 12, and for the same reason: there is still no Anthropic,
+  Google or OpenAI key on this machine and `agent_profiles` is empty. What *is*
+  proved, against the real database with only the provider's network faked
+  through the AI SDK's own `MockEmbeddingModelV4`
+  (`modules/search/search-staleness.test.ts`, 14 tests): the whole indexing pass,
+  the derived queue returning exactly the block whose version moved and not the
+  one beside it, the version-1 vector still sitting in `block_embeddings` after
+  the edit while `current_block_embeddings` shows nothing for that block, the old
+  wording being unfindable by a query that is a near-exact match for that stored
+  vector, the new wording being findable by words in the same instant, the
+  re-embed adding a second row without disturbing the first, the cleanup removing
+  exactly the dead row and changing no answer search gives, and the whole thing
+  degrading to a plain word search with the *real* `embedWithRole` when the embed
+  role is empty. What is unproved is whether a real provider's vectors rank
+  anything sensibly, and whether a real embed model returns 1536 numbers — see
+  the next item. Paste a key into `/settings/agents` for the `embed` role and
+  press **Update the index** on `/search`.
+- **`vector(1536)` is a hard width, and Google's embedding models are 768.**
+  docs/SCHEMA.md picked 1536 and the column enforces it, so an embed role filled
+  by Gemini stores nothing: `toVectorLiteral` refuses and the screen says which
+  model returned how many numbers and what to do about it. OpenAI's
+  `text-embedding-3-small` is 1536 and works. The real fixes are either a
+  `dimensions` request parameter where the provider supports one, or a second
+  column — both are schema changes and neither belongs in a slice that has spent
+  its migration.
+- The semantic half has no distance floor: it returns the `p_limit` nearest
+  vectors whatever their distance, so in a workspace with a handful of notes
+  *every* note comes back for *any* query, ranked. Reciprocal rank fusion keeps
+  the real matches on top and the effect disappears as the workspace grows past
+  a screenful, which is why it was left — but a `p_min_similarity` argument to
+  `search_blocks` is the honest fix, and it is a `create or replace` in whichever
+  migration comes next.
+- A search result links to the *note* the passage lives in, not to the passage
+  itself. prompts/13-search.md asks for "linking into the note at the right
+  place" and this is the half of it that is not built: the editor renders each
+  paragraph with `data-block-id` but no `id`, and it mounts after hydration
+  (`immediatelyRender: false`), so a `#fragment` link would have nothing to
+  scroll to at load. Doing it properly means the note editor scrolling to and
+  briefly marking a named block after it mounts — a change to
+  `components/notes/note-editor.tsx`, which is slice 05's file (rule 9). The hit
+  shows the passage's own words, so it is findable by eye on arrival.
+- `countPendingEmbeddings` counts by fetching up to 200 pending rows and reading
+  `.length`, because the queue is a set-returning function and PostgREST cannot
+  ask it for a `count`. It is right at the scale it runs at and wrong past 200,
+  where the screen will simply say 200. A `count(*)` wrapper is one more SQL
+  function whenever a migration is open.
+- `search_blocks` and `pending_embeddings` index six block types —
+  `text`, `heading`, `note`, `summary`, `question`, `answer` — but the screen
+  drops everything that does not resolve to a note (see the decision above), so
+  summaries, questions and answers are embedded and then never shown. That is
+  the user's API credits paying for rows nothing reads. Narrowing
+  `pending_embeddings` to `('text', 'heading', 'note')` is a one-line
+  `create or replace`; it was not done here because migration 009 is applied and
+  rule 3 says never edit an applied migration.
+- The version predicate makes the HNSW index unusable on its own: the semantic
+  half joins `block_embeddings` to `blocks` to compare versions, so Postgres
+  cannot answer it from the vector index alone and scans instead. Correct, and
+  fine at one student's scale; if it ever is not, the lever is a partial index
+  or a `current_version` column maintained by a trigger — and the second of
+  those is a new fact that can disagree with `blocks.version`, so think hard
+  before reaching for it.

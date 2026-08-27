@@ -1,7 +1,7 @@
 'use client';
 
 // The app's only chrome: a 216px sidebar on a laptop, a 62px bar at the bottom
-// of a phone. Both render the same five destinations, so there is one list to
+// of a phone. Both render the same six destinations, so there is one list to
 // keep honest.
 //
 // 'use client' for one reason: knowing which link is the current page.
@@ -90,6 +90,18 @@ const DESTINATIONS: Destination[] = [
       <Icon>
         <path d="M5 2.5h7l3.5 3.5v11.5H5z" />
         <path d="M11.5 2.5V6H15M7.5 10h5M7.5 13h3" />
+      </Icon>
+    ),
+  },
+  {
+    href: '/search',
+    label: 'Search',
+    built: true,
+    // A lens.
+    icon: (
+      <Icon>
+        <circle cx="8.75" cy="8.75" r="5.25" />
+        <path d="M12.6 12.6 17 17" />
       </Icon>
     ),
   },
@@ -187,12 +199,14 @@ export function AppNav({ staleCount = 0 }: AppNavProps) {
 
       {/* Phone. Fixed to the bottom, 62px, one hairline along the top, and
           padded for the home indicator so the labels are not sitting on it.
-          Five columns: at 390px that is 78px each, which fits a 20px icon and
-          a one-word label with room to spare. */}
+          Six columns since slice 13: at 390px that is 65px each, which still
+          fits a 20px icon over a one-word label at 12px — the floor
+          docs/DESIGN.md sets — and is comfortably past the 44px tap target.
+          Six is the limit; a seventh destination needs a different pattern. */}
       <nav
         aria-label="Sections"
         className={cx(
-          'fixed inset-x-0 bottom-0 z-40 grid grid-cols-5 border-t border-border bg-surface md:hidden',
+          'fixed inset-x-0 bottom-0 z-40 grid grid-cols-6 border-t border-border bg-surface md:hidden',
           'h-[calc(var(--bottom-nav-height)+env(safe-area-inset-bottom))] pb-[env(safe-area-inset-bottom)]'
         )}
       >

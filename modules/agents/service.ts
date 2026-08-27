@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { embed, generateText } from 'ai';
+import { embed, embedMany, generateText } from 'ai';
 
 import { encryptSecret } from '@/lib/crypto';
 
@@ -286,6 +286,53 @@ export function generateWithRole(
     } catch (error) {
       // The provider's own words, with the key scrubbed out of them by value
       // and by shape — some providers echo the key back in a 401.
+      throw new Error(safeMessage(error, spec.apiKey));
+    }
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Asking the embed role for some vectors
+//
+// The same seam as `generateWithRole` above, and it exists for the same two
+// reasons: `no-provider-sdk.test.ts` refuses to let the `ai` package be
+// imported outside this module, and slice 13's indexer has to be runnable in a
+// test with no provider key. So what the search module holds is a function —
+// strings in, vectors out — not an embedding model.
+// ---------------------------------------------------------------------------
+
+/** What one call to the embed role produced, and what produced it. */
+export type Embedding = { vectors: number[][]; model: string };
+
+/** A bound embed role: text in, one vector per string, in the same order. */
+export type Embed = (values: string[]) => Promise<Embedding>;
+
+/**
+ * The `embed` role, ready to be called.
+ *
+ * Nothing is read or decrypted until the returned function is invoked, so
+ * building one is free. `AgentNotConfigured` (no embed key saved) and
+ * `AgentKeyUnreadable` (ENCRYPTION_KEY changed) come out of the call, where the
+ * indexer turns them into a sentence on the search screen.
+ *
+ * `maxRetries: 0` for the same reason every other call here uses it: a person
+ * is waiting on a screen, and three silent retries of a call that is going to
+ * fail anyway is thirty seconds of nothing happening.
+ */
+export function embedWithRole(db: SupabaseClient, userId: string): Embed {
+  return async (values) => {
+    const spec = await modelSpecFor(db, userId, 'embed');
+    if (values.length === 0) return { vectors: [], model: modelLabel(spec.provider, spec.model) };
+
+    try {
+      const { embeddings } = await embedMany({
+        model: embedModelFor(spec),
+        values,
+        maxRetries: 0,
+      });
+      return { vectors: embeddings, model: modelLabel(spec.provider, spec.model) };
+    } catch (error) {
+      // The provider's own words, with the key scrubbed out of them.
       throw new Error(safeMessage(error, spec.apiKey));
     }
   };

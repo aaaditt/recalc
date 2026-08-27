@@ -18,7 +18,7 @@ column as you go — this is how a fresh session knows where we are.
 | 10 | Agents — BYOK settings, encrypted keys, role registry | done |
 | 11 | **Recalc engine** — derivations, first recipe, /review queue | done |
 | 12 | **Questions** — ask-about-selection, open questions per course | done |
-| 13 | Search — pgvector over versioned embeddings | not started |
+| 13 | Search — pgvector over versioned embeddings | done |
 | 14 | Email connect — Gmail OAuth, incremental sync | not started |
 | 15 | Email extraction — proposals queue | not started |
 
@@ -62,11 +62,24 @@ the provider's network faked — but **no answer in this project has ever been
 written by a real model either**. Same key, same fix: paste one in and press
 Answer on a question.
 
+Slice 13 works *without* that key, which is the difference. Search's full-text
+half reads live blocks, so `/search` finds anything you have written the moment
+you have written it and stops finding the old wording the moment you change it —
+no model involved. The semantic half needs the `embed` role filled in
+`/settings/agents`; until it is, the screen says so in one line and searches
+words alone. What is proved against the real database, with only the provider's
+network faked, is the invariant itself: an embedding whose version is behind its
+block's stays physically in the table and cannot be reached by any query path
+(`modules/search/search-staleness.test.ts`). What is unproved is whether a real
+provider's vectors rank anything sensibly — and note that `vector(1536)` is a
+hard width, so the `embed` role wants OpenAI's `text-embedding-3-small` rather
+than a Gemini model, which returns 768. See `docs/DECISIONS.md`.
+
 ## If you run out of steam
 
 Slices 00–09 give you a genuinely good semester planner. Slices 11 and 12 are the
-part that does not exist anywhere else. If time gets tight, skip 13, 14 and 15
-entirely and go straight from 10 to 11.
+part that does not exist anywhere else. If time gets tight, skip 14 and 15
+entirely.
 
 ## Stopping rule
 

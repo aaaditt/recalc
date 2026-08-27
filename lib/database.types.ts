@@ -75,6 +75,38 @@ export type Database = {
         }
         Relationships: []
       }
+      block_embeddings: {
+        Row: {
+          block_id: string
+          created_at: string
+          embedding: string
+          model: string
+          version: number
+        }
+        Insert: {
+          block_id: string
+          created_at?: string
+          embedding: string
+          model: string
+          version: number
+        }
+        Update: {
+          block_id?: string
+          created_at?: string
+          embedding?: string
+          model?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "block_embeddings_block_id_fkey"
+            columns: ["block_id"]
+            isOneToOne: false
+            referencedRelation: "blocks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       blocks: {
         Row: {
           content: Json
@@ -833,10 +865,65 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      current_block_embeddings: {
+        Row: {
+          block_id: string | null
+          created_at: string | null
+          embedding: string | null
+          model: string | null
+          version: number | null
+          workspace_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "block_embeddings_block_id_fkey"
+            columns: ["block_id"]
+            isOneToOne: false
+            referencedRelation: "blocks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "blocks_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
-      [_ in never]: never
+      block_plain_text: { Args: { content: Json }; Returns: string }
+      delete_stale_embeddings: {
+        Args: { p_workspace_id: string }
+        Returns: number
+      }
+      pending_embeddings: {
+        Args: { p_limit?: number; p_workspace_id: string }
+        Returns: {
+          block_id: string
+          plain_text: string
+          version: number
+        }[]
+      }
+      search_blocks: {
+        Args: {
+          p_embedding?: string
+          p_limit?: number
+          p_query: string
+          p_workspace_id: string
+        }
+        Returns: {
+          block_id: string
+          block_type: string
+          lexical: boolean
+          parent_id: string
+          plain_text: string
+          score: number
+          semantic: boolean
+          version: number
+        }[]
+      }
     }
     Enums: {
       [_ in never]: never

@@ -11,6 +11,7 @@
 // `modelSpecFor` is deliberately not re-exported: it returns a decrypted key,
 // and the module boundary lint rule keeps it inside this folder.
 export {
+  embedWithRole,
   generateWithRole,
   getAgentProfile,
   getAgentProfiles,
@@ -21,6 +22,8 @@ export {
   saveAgentProfile,
   testAgentConnection,
   type ConnectionResult,
+  type Embed,
+  type Embedding,
   type Generate,
   type Generation,
 } from './service';
