@@ -73,6 +73,15 @@ export default async function EmailSettingsPage({
         subtitle="Read-only. Recalc lists what arrived; it never sends, replies, labels or deletes."
         actions={
           <>
+            {/* The proposals queue. It is not in the nav — six columns is the
+                limit docs/DESIGN.md sets and they are all spoken for — so this
+                is how /inbox is reached. See docs/DECISIONS.md. */}
+            <Link
+              href="/inbox"
+              className="text-13 text-muted underline-offset-4 hover:text-ink hover:underline"
+            >
+              Inbox
+            </Link>
             <Link
               href="/settings/drive"
               className="text-13 text-muted underline-offset-4 hover:text-ink hover:underline"

@@ -12,6 +12,8 @@
 // where it happens.
 export {
   discardDerivation,
+  emailBlocksAlreadyExtracted,
+  extractFromEmailBlock,
   generateAnswer,
   getAnswer,
   getAnswers,
@@ -20,6 +22,7 @@ export {
   keepOldVersion,
   summariseNote,
   type Answer,
+  type ExtractionRun,
   type NoteSummary,
 } from './service';
 export {
@@ -36,8 +39,10 @@ export {
 } from './staleness';
 export {
   derivationsDownstreamOf,
+  derivationsForBlocks,
   derivationsForNote,
   readAnswerSources,
+  readEmailSources,
   readInputs,
   readNoteSources,
   resolveSources,
@@ -59,6 +64,20 @@ export {
   hasNothingToAnswerFrom,
   type AnswerInput,
 } from './recipes/answer';
+export {
+  EXTRACT,
+  EXTRACT_PROMPT_VERSION,
+  MAX_ITEMS_PER_EMAIL,
+  digestOf,
+  extract,
+  parseExtraction,
+  quotesTheEmail,
+  readStoredItems,
+  readableText,
+  type EmailFacts,
+  type ExtractInput,
+  type ExtractedItem,
+} from './recipes/extract';
 export {
   derivationSchema,
   derivationSourceSchema,

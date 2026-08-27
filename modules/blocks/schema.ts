@@ -15,6 +15,12 @@ export const blockTypeSchema = z.enum([
   // in slice 05; docs/SCHEMA.md lists the types in a comment and this is the
   // one addition to it. See docs/DECISIONS.md.
   'note',
+  // What slice 15's `extract` recipe wrote out of one email: a digest in `text`
+  // and the proposals it found in `items`. The second addition to the list, and
+  // it is deliberately not `summary` — `pending_embeddings` indexes summaries,
+  // and paying a provider to embed an email digest nothing searches would be
+  // spending the user's credits on rows no screen reads.
+  'extract',
 ]);
 
 // Block content is jsonb, and there are exactly two shapes in it:

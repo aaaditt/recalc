@@ -20,7 +20,7 @@ column as you go — this is how a fresh session knows where we are.
 | 12 | **Questions** — ask-about-selection, open questions per course | done |
 | 13 | Search — pgvector over versioned embeddings | done |
 | 14 | Email connect — Gmail OAuth, incremental sync | done |
-| 15 | Email extraction — proposals queue | not started |
+| 15 | Email extraction — proposals queue | done |
 
 ## Why this order
 
@@ -93,11 +93,76 @@ row nor its block. `modules/google/gmail-scope.test.ts` proves the URL this app
 sends a browser to asks for `gmail.readonly` and nothing that could send, label
 or delete. Connect an account on `/settings/email` and press **Sync now** twice.
 
+Slice 15 needs both of the things slice 14 needs — a Gmail account past the
+consent screen — and the provider key slices 10–13 have been waiting for, in
+the `deep` role. Without either, `/inbox` renders, says nothing is waiting, and
+the Scan button truthfully reports there is no mail to read. **No real email has
+ever been read by a real model on this machine**, so the wording in
+`modules/recalc/recipes/extract.ts` is unproved: whether a subject line and a
+snippet are enough for a model to find a deadline, and how often it invents one.
+What *is* proved against the real database with only the provider's network
+faked (`modules/proposals/email-proposals.test.ts`, 12 tests): a scan of a
+mailbox holding one course email and one society newsletter spending **exactly
+one** model call, three rows landing in `email_proposals` with status
+`proposed`, the `tasks` table and the lecture's status *both untouched* while
+they sit there, accepting a deadline creating exactly one task and flipping the
+row to `accepted`, accepting a class change cancelling the lecture and creating
+no task, rejecting keeping the row for ever, and re-running extraction over that
+same email — model called again, same three items returned — proposing nothing
+at all, because the unique index on `(email_id, fingerprint)` in migration 011
+is what enforces it rather than a check some future caller could forget. The
+gate, the quote check and the fingerprint are proved again without a database in
+`modules/proposals/extraction-safety.test.ts` (11 tests). `/inbox` is reached
+from **Settings → Email → Inbox**: the nav is six columns and full.
+
 ## If you run out of steam
 
 Slices 00–09 give you a genuinely good semester planner. Slices 11 and 12 are the
 part that does not exist anywhere else. If time gets tight, skip 14 and 15
 entirely.
+
+## What to build next
+
+The fifteen planned slices are done. This list is not a wishlist — every item is
+something the build actually ran into, and every one of them is already written
+down under "Noticed, not fixed" in `docs/DECISIONS.md`. In order.
+
+1. **Make a note's version move when its set of paragraphs changes.** Adding a
+   paragraph stales nothing, and soft-deleting one stales nothing either,
+   because the cascade fires on a version bump of a block already on a receipt
+   and a brand-new paragraph is on nobody's receipt. This is the single biggest
+   hole in the sentence this whole product exists to say. It is a change to
+   `modules/notes` and `modules/blocks`, and it is half a day.
+2. **Paste a provider key in and drive the whole thing once.** No summary, no
+   answer, no embedding and no email extraction in this project has ever been
+   produced by a real model. Every mechanism is proved; every *prompt* is
+   guesswork. Note that `vector(1536)` is a hard width, so the `embed` role
+   wants OpenAI's `text-embedding-3-small` and not a Gemini model.
+3. **One "needs you" surface.** `/review` has a nav column and a badge;
+   `/inbox` has neither and is reached through Settings; a dead Gmail token is
+   invisible outside `/settings/email`. Three separate notes in DECISIONS.md
+   asking for the same thing. One destination, one badge, three sections.
+4. **The sentence from `docs/PRODUCT.md`.** "6 questions on Unit 3 you never
+   resolved, zero on Unit 1. You've spent 3 hours on Unit 1 and 20 minutes on
+   Unit 3. Exam in 9 days." Questions, study minutes and syllabus units all
+   exist and are all linked. Nothing has ever multiplied them together, and it
+   is the thing no other study app can say.
+5. **Name the Google account everywhere Drive touches.** `modules/google`'s
+   `find`, `getDriveAccessToken`, `getPickerToken` and `disconnectGoogleAccount`
+   still mean "*the* account" — they read the oldest row. Slice 14 fixed the
+   Gmail half; with two accounts connected, `/settings/drive`'s Disconnect
+   button is a trap.
+6. **Stop paying to embed rows nothing reads, and land search on the passage.**
+   `pending_embeddings` indexes summaries, questions and answers, and `/search`
+   drops every hit that does not resolve to a note; a result links to the note
+   rather than to the paragraph. Both are small, and both are money or attention
+   currently being spent for nothing.
+
+Below those, in rising order of how much they will annoy you: `/review`'s
+failure copy still says "press Summarise" whatever the recipe was;
+`modules/courses` has no way to set a lecture's room, so an accepted room change
+can only be marked `moved`; and `getUnresolvedQuestions` reads the whole
+semester to draw one course page.
 
 ## Stopping rule
 

@@ -6,6 +6,8 @@ import { redirect } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { syncAccount } from '@/modules/gmail';
 import { disconnectGoogleAccountById } from '@/modules/google';
+import { scanMailbox } from '@/modules/proposals';
+import { ensureWorkspace } from '@/modules/workspaces';
 
 // Routing only: who is asking, hand it to the module, say what moved.
 
@@ -33,6 +35,23 @@ export async function syncEmailAction(formData: FormData): Promise<void> {
   const { supabase, user } = await requireUser();
   const result = await syncAccount(supabase, user.id, accountId);
 
+  // Slice 15: pressing Sync is a person asking for their mail to be dealt with,
+  // so the mail that just arrived is read straight away — and `scanMailbox`
+  // gates every message on keywords before it spends anything, so a sync that
+  // pulls forty newsletters costs nothing at all. The hourly cron job
+  // deliberately does NOT do this: unattended model spend is a different
+  // decision from a button press. See docs/DECISIONS.md.
+  let proposed = 0;
+  if (result.outcome === 'ok' && result.stored > 0) {
+    const workspace = await ensureWorkspace(supabase, user.id);
+    const scan = await scanMailbox(supabase, {
+      workspaceId: workspace.id,
+      userId: user.id,
+    });
+    proposed = scan.proposed;
+    revalidatePath('/inbox');
+  }
+
   revalidatePath('/settings/email');
 
   // `result.message` is written by modules/gmail and never contains a sender,
@@ -43,7 +62,10 @@ export async function syncEmailAction(formData: FormData): Promise<void> {
       'synced',
       result.stored === 0
         ? 'Up to date — nothing new.'
-        : `${result.stored} new ${result.stored === 1 ? 'message' : 'messages'}.`
+        : `${result.stored} new ${result.stored === 1 ? 'message' : 'messages'}.` +
+            (proposed > 0
+              ? ` ${proposed} ${proposed === 1 ? 'proposal is' : 'proposals are'} waiting in your inbox.`
+              : '')
     );
   } else if (result.message) {
     params.set('error', result.message);

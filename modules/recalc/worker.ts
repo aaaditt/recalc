@@ -5,6 +5,7 @@ import { getBlocks, updateBlock } from '@/modules/blocks';
 
 import { inputsGoneMessage, readInputs } from './graph';
 import { ANSWER, answer } from './recipes/answer';
+import { EXTRACT, extract } from './recipes/extract';
 import { SUMMARIZE, summarize } from './recipes/summarize';
 import * as repo from './repo';
 import type { Derivation, Preview, ReadSource, RecipeOutput, RunResult } from './schema';
@@ -77,6 +78,8 @@ async function produce(
       return summarize({ title: inputs.title, sources: inputs.sources }, generate);
     case ANSWER:
       return answer({ question: inputs.question, sources: inputs.sources }, generate);
+    case EXTRACT:
+      return extract({ email: inputs.email, sources: inputs.sources }, generate);
   }
 }
 

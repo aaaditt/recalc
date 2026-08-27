@@ -91,6 +91,51 @@ export async function getEmailAccounts(
   return result;
 }
 
+/**
+ * The newest mail this user has, across every account they have connected.
+ *
+ * Slice 15 reads this to decide what to scan. Ownership is proved the only way
+ * `email_messages` allows — through the connection it hangs off — rather than
+ * by a `workspace_id` the table does not have (docs/DECISIONS.md, slice 14).
+ */
+export async function getRecentMessages(
+  db: SupabaseClient,
+  userId: string,
+  limit: number
+): Promise<EmailMessage[]> {
+  const accounts = await listGoogleAccounts(db, userId);
+  return repo.recentForAccounts(
+    db,
+    accounts.map((account) => account.id),
+    limit
+  );
+}
+
+/** One stored message, or null when it is not this user's. */
+export async function getMessage(
+  db: SupabaseClient,
+  userId: string,
+  id: string
+): Promise<EmailMessage | null> {
+  const message = await repo.findById(db, id);
+  if (!message) return null;
+
+  const accounts = await listGoogleAccounts(db, userId);
+  return accounts.some((account) => account.id === message.google_account_id) ? message : null;
+}
+
+/** Several stored messages, filtered to the ones that are this user's. */
+export async function getMessages(
+  db: SupabaseClient,
+  userId: string,
+  ids: string[]
+): Promise<EmailMessage[]> {
+  if (ids.length === 0) return [];
+  const accounts = new Set((await listGoogleAccounts(db, userId)).map((account) => account.id));
+  const messages = await repo.listByIds(db, ids);
+  return messages.filter((message) => accounts.has(message.google_account_id));
+}
+
 // ---------------------------------------------------------------------------
 // Syncing
 // ---------------------------------------------------------------------------

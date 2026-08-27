@@ -77,6 +77,48 @@ export async function setBlockId(
   if (error) throw new Error(`gmail.setBlockId: ${error.message}`);
 }
 
+/** One stored message by id, whoever it belongs to. The caller proves ownership. */
+export async function findById(
+  db: SupabaseClient,
+  id: string
+): Promise<EmailMessage | null> {
+  const { data, error } = await db
+    .from('email_messages')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) throw new Error(`gmail.findById: ${error.message}`);
+  return data ? emailMessageSchema.parse(data) : null;
+}
+
+/** Several stored messages by id. */
+export async function listByIds(
+  db: SupabaseClient,
+  ids: string[]
+): Promise<EmailMessage[]> {
+  if (ids.length === 0) return [];
+  const { data, error } = await db.from('email_messages').select('*').in('id', ids);
+  if (error) throw new Error(`gmail.listByIds: ${error.message}`);
+  return (data ?? []).map((row) => emailMessageSchema.parse(row));
+}
+
+/** The newest mail across several accounts at once. */
+export async function recentForAccounts(
+  db: SupabaseClient,
+  accountIds: string[],
+  limit: number
+): Promise<EmailMessage[]> {
+  if (accountIds.length === 0) return [];
+  const { data, error } = await db
+    .from('email_messages')
+    .select('*')
+    .in('google_account_id', accountIds)
+    .order('received_at', { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(`gmail.recentForAccounts: ${error.message}`);
+  return (data ?? []).map((row) => emailMessageSchema.parse(row));
+}
+
 /** The newest mail for one account. */
 export async function recentForAccount(
   db: SupabaseClient,

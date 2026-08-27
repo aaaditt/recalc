@@ -8,6 +8,7 @@ import {
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { ANSWER } from './recipes/answer';
+import { EXTRACT, type EmailFacts } from './recipes/extract';
 import { SUMMARIZE } from './recipes/summarize';
 import * as repo from './repo';
 import type { Derivation, DerivationSourceRow, ReadSource } from './schema';
@@ -90,6 +91,17 @@ export async function derivationsDownstreamOf(
   blockId: string
 ): Promise<Derivation[]> {
   const rows = await repo.listSourcesOfBlock(db, blockId);
+  return repo.listByIds(db, workspaceId, [...new Set(rows.map((row) => row.derivation_id))]);
+}
+
+/** ...for many blocks at once, without a query each. Slice 15 asks it of a mailbox. */
+export async function derivationsForBlocks(
+  db: SupabaseClient,
+  workspaceId: string,
+  blockIds: string[]
+): Promise<Derivation[]> {
+  if (blockIds.length === 0) return [];
+  const rows = await repo.listSourcesOfBlocks(db, blockIds);
   return repo.listByIds(db, workspaceId, [...new Set(rows.map((row) => row.derivation_id))]);
 }
 
@@ -199,7 +211,59 @@ export async function readAnswerSources(
 }
 
 // ---------------------------------------------------------------------------
-// One door for both recipes
+// Reading an email as source material
+// ---------------------------------------------------------------------------
+
+/** A field of an `email` block's content, as slice 14's sync wrote it. */
+function field(block: Block, name: string): string {
+  const value = block.content[name];
+  return typeof value === 'string' ? value : '';
+}
+
+/**
+ * An extraction's source, read the way its recipe reads it: one `email` block,
+ * and the sender, snippet and arrival time that slice 14 parked on it.
+ *
+ * Same decision as `readAnswerSources` — the block comes from the derivation's
+ * own receipt, never from `email_messages`, so modules/recalc does not have to
+ * know that modules/gmail exists. The receipt is seeded with the email block the
+ * moment the derivation is created, so this is complete on the very first run.
+ *
+ * Returns null when the receipt no longer names a live email block in this
+ * workspace.
+ */
+export async function readEmailSources(
+  db: SupabaseClient,
+  workspaceId: string,
+  derivationId: string
+): Promise<{ email: EmailFacts; sources: ReadSource[] } | null> {
+  const resolved = await resolveSources(db, derivationId);
+
+  const email = resolved
+    .map(({ block }) => block)
+    .find(
+      (block): block is Block =>
+        block !== null &&
+        block.workspace_id === workspaceId &&
+        block.type === 'email' &&
+        block.deleted_at === null
+    );
+  if (!email) return null;
+
+  return {
+    email: {
+      sender: field(email, 'sender'),
+      // The block's own text is the subject — that is what slice 14 hashes.
+      subject: plainTextOf(email.content),
+      snippet: field(email, 'snippet'),
+      receivedAt: field(email, 'received_at'),
+    },
+    sources: [asReadSource(email)],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// One door for every recipe
 // ---------------------------------------------------------------------------
 
 /**
@@ -211,7 +275,8 @@ export async function readAnswerSources(
  */
 export type DerivationInputs =
   | { recipe: typeof SUMMARIZE; title: string; sources: ReadSource[] }
-  | { recipe: typeof ANSWER; question: string; sources: ReadSource[] };
+  | { recipe: typeof ANSWER; question: string; sources: ReadSource[] }
+  | { recipe: typeof EXTRACT; email: EmailFacts; sources: ReadSource[] };
 
 /** Null when the thing this was built from is gone, or the recipe is unknown. */
 export async function readInputs(
@@ -230,6 +295,11 @@ export async function readInputs(
     return read ? { recipe: ANSWER, question: read.question, sources: read.sources } : null;
   }
 
+  if (derivation.recipe === EXTRACT) {
+    const read = await readEmailSources(db, workspaceId, derivation.id);
+    return read ? { recipe: EXTRACT, email: read.email, sources: read.sources } : null;
+  }
+
   return null;
 }
 
@@ -237,5 +307,6 @@ export async function readInputs(
 export function inputsGoneMessage(recipe: string): string {
   if (recipe === SUMMARIZE) return 'The note this was built from is gone.';
   if (recipe === ANSWER) return 'The question this answers is gone.';
+  if (recipe === EXTRACT) return 'The email this was read from is gone.';
   return `There is no recipe called "${recipe}" yet.`;
 }

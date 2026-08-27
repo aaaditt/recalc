@@ -1846,6 +1846,135 @@ database rather than only in the service; and three read indexes.
 
 ---
 
+## 2026-08-27 — Extraction is the slice 11 engine with a third recipe, not a pipeline
+`modules/recalc/recipes/extract.ts` sits beside `summarize.ts` and `answer.ts`
+and obeys the same two rules: it writes nothing, and it declares its inputs by
+handing back the very array it built the prompt from. `graph.ts` gained
+`readEmailSources` and an `EXTRACT` branch in `readInputs`; `worker.ts` gained
+one `case`. That is the whole of it — there is no second place in this app that
+calls a model, records what it read, or resolves a status. The payoff is that an
+email extraction has a receipt like everything else: `derivation_sources` names
+the `email` block at the version it was read, so the day anything edits an email
+block, the extraction is flagged by the same Postgres trigger as a summary. It
+also means the failure paths were already written and already tested — a dead
+key, a model that will not answer, a `computing` row that must never get stuck.
+
+## 2026-08-27 — The cheap gate is deterministic heuristics, not a `fast` model call
+prompts/15-email-extraction.md offers both: "use the `fast` model (or plain
+heuristics — sender domain, keywords)". Heuristics won, and it was not close. A
+`fast` call is still a network round trip, still a key the user has not pasted,
+and still something no test on this machine can exercise — a gate that cannot
+run without a provider is a gate that gets skipped. `modules/proposals/gate.ts`
+is a pure function of a sender, a subject, a snippet and the user's own course
+list: a course code, name or lecturer scores 3, a deadline or class-change word
+2, a materials word 1, a university domain 1, and the words bulk mail uses about
+itself (`unsubscribe`, `newsletter`, `sponsored`) subtract 3. Three points *and*
+at least one thing being asked for is the bar. "ME301: welcome to the module"
+matches a course, asks nothing, and costs nothing. It is allowed to be wrong in
+one direction only: a false negative is one email that never becomes a proposal,
+a false positive is one wasted call, and neither can put a row in `tasks`.
+
+## 2026-08-27 — `fingerprint` is a column, because a unique index needs one
+"Never propose the same thing twice from the same email" is enforced by
+`email_proposals_email_fingerprint_key`, a unique index on
+`(email_id, fingerprint)`, and `repo.insertNew` is `on conflict do nothing`
+against it. Service code checks nothing first, deliberately: a check in
+TypeScript is a check a future caller can forget, and this one has to hold for
+the rejected rows too. The fingerprint is normalised — NFKC, whitespace
+collapsed, lowercased, and a due *day* rather than a due instant — so "Problem
+sheet 3" and "problem  sheet 3", 17:00 and 23:59, are one deadline. docs/SCHEMA.md
+does not list the column; it also does not list a way to keep the promise
+without one.
+
+## 2026-08-27 — Migration 011 adds four more columns SCHEMA.md does not name
+`course_id`, `meeting_id`, `task_id` and `decided_at`, each earning its place:
+the slice has to *show which course it thinks this is* and a foreign key is how
+that stays true when a course is deleted; a class change is about one lecture and
+naming it is what lets the screen say which one will change; and `task_id`
+records what accepting actually did, which is the other half of the provenance
+`tasks.source_block_id` already carries. All four are nullable and all four are
+`on delete set null` — losing a course must not lose the record that a proposal
+was made and decided.
+
+## 2026-08-27 — The derived block is a new type, `extract`, and not `summary`
+`blockTypeSchema` gains its second addition since docs/SCHEMA.md's comment (slice
+05 added `note`). Reusing `summary` would have been free and wrong twice over:
+it would call an email digest a summary of a note on `/review`, and
+`pending_embeddings` in migration 009 indexes `summary`, so every scanned email
+would be embedded at the user's expense to be found by a search that drops
+anything not resolving to a note. `blocks.type` is a `text` column with no check
+constraint, so this needed no migration.
+
+## 2026-08-27 — `RecipeOutput.content` is `{ text } & Record<string, unknown>`
+The extract recipe has to hand back structure — a list of items — as well as the
+line a person reads, and both have to land in the same `updateBlock` or they can
+drift. Widening the type is three words and keeps `text` as the only thing
+hashed, so the staleness cascade is untouched: `plainTextOf` still reads `.text`
+and `summarize`/`answer` still satisfy the type unchanged. `modules/proposals`
+reads the items back out of the block the engine just wrote rather than being
+handed them by a second route, so the digest on screen and the list a task is
+made from cannot disagree.
+
+## 2026-08-27 — Accepting a class change writes `cancelled` or `moved`, and never a room
+`modules/courses` has no public function that sets `class_meetings.room` —
+`rescheduleMeeting` takes times only — and inventing a new start time from a
+subject line is exactly the guess this slice may not make. So a cancelled class
+becomes `status = 'cancelled'` and a room change or a reschedule becomes
+`status = 'moved'`, with the card saying in as many words that the new room is in
+the email and belongs on the lecture page. It is honest, it uses statuses that
+already exist, and it adds no API surface to slice 04's module (rule 9).
+Accepting a class change never creates a task, and there is a test for that.
+
+## 2026-08-27 — `/inbox` is reached from Settings → Email, because the nav is full
+Slice 13's decision above says it plainly: "Six is the limit; a seventh
+destination needs a different pattern", and at 390px a seventh column is 55px,
+which will not hold a one-word label at the 12px floor docs/DESIGN.md sets. So
+`/inbox` is a top-level route with no nav column, linked from `/settings/email`
+beside Drive and Agents. That is worse for discoverability and it is the right
+trade this week; the pattern that fixes it properly is one "needs you" surface
+that owns both the stale queue and the proposals queue, and that is a design
+decision, not a slice-15 one.
+
+## 2026-08-27 — Scanning is a button, and pressing Sync counts as pressing it
+Nothing in this app spends a model call on email without a person having tapped
+something. `/inbox` has a Scan button, and `syncEmailAction` — the "Sync now"
+button on `/settings/email` — runs the same scan when new mail actually arrived,
+because pressing Sync *is* a person asking for their mail to be dealt with, and
+the definition of done says "sync, open `/inbox`, and find a real deadline". The
+hourly cron job at `/api/cron/sync-email` deliberately does **not** scan:
+unattended model spend is a different decision from a button press, and the cron
+route is untouched by this slice. Every scan is bounded at fifteen `deep` calls
+and says so when it stops.
+
+## 2026-08-27 — A proposal must quote the email, or it is dropped
+`parseExtraction` throws away any item whose `sourceText` is not literally in
+the subject or snippet, compared after NFKC and whitespace normalisation. A
+proposal whose evidence cannot be checked is worse than no proposal: it looks
+exactly as trustworthy as a real one. This also makes the screen's promise cheap
+to keep — "show me what it extracted *and* the sentence it extracted it from" is
+one field on the payload, because the field is a quote rather than a paraphrase.
+The card renders it in Source Serif, as a quotation, directly under the heading.
+
+## 2026-08-27 — `confidence` is stored and never rendered as a number
+docs/SCHEMA.md has the column, so the gate's score — its total squashed to 0..1 —
+goes in it. No screen shows it. A keyword score dressed up as "87% confident" is
+a precision this app has not earned, and the honest version of the same signal is
+already on the card: which course it matched, and the words it matched on. The
+one place uncertainty is surfaced is where it can be acted on — when the gate did
+not match a course, the card says "Not sure which course" and offers a select
+rather than filing the task somewhere and hoping.
+
+## 2026-08-27 — One migration, no dependencies, in slice 15
+Because (rule 10): nothing was installed. JSON parsing is `JSON.parse` with the
+fence stripped, the gate is string matching, and the model is reached through the
+AI SDK that slice 10 already brought in.
+`supabase/migrations/011_email_proposals.sql` adds `email_proposals` with RLS
+enabled and all four policies (rule 8), ownership flowing through `email_id` to
+`email_messages` to `google_accounts.user_id` exactly as slice 14's table does;
+the unique index the slice's second promise depends on; and three read indexes.
+
+---
+
 ## Noticed, not fixed
 
 Things spotted outside the current slice. Do not fix them mid-slice; write them here.
@@ -2342,3 +2471,75 @@ Things spotted outside the current slice. Do not fix them mid-slice; write them 
 - `email_proposals` from docs/SCHEMA.md is deliberately not created. It is slice
   15's table and slice 15's migration; creating it empty here would have been a
   column nobody reads and a policy nobody exercises.
+- **No real email has ever been read by a real model on this machine.** Same gap
+  as slices 10–14, now doubled: there is no provider key *and* no connected
+  Gmail account. Everything from a stored `email_messages` row onwards is proved
+  against the real database with only the provider's network faked
+  (`modules/proposals/email-proposals.test.ts`, 12 tests), and the gate, the
+  quote check and the fingerprint are proved again with no database at all
+  (`modules/proposals/extraction-safety.test.ts`, 11 tests). What is unproved is
+  the wording in `modules/recalc/recipes/extract.ts`: whether a subject line and
+  a two-hundred-character snippet are enough for a real model to find a real
+  deadline, how often it invents one that the quote check then throws away, and
+  whether "at most four items" is the right ceiling. All of it is a wording
+  change rather than a structural one.
+- **The fingerprint enforces identity, not meaning.** A second scan in which the
+  model writes "Problem sheet three" where it previously wrote "Problem sheet 3"
+  produces a different fingerprint and therefore a second proposal for the same
+  thing. The index cannot see that; only a model or an embedding could, and
+  paying for either to deduplicate proposals is worse than the occasional
+  double. In practice the same email plus the same prompt version gives the same
+  answer, and an email is only ever read a second time if something asks for it.
+- An `extract` derivation will in practice never go stale, because nothing in
+  the app ever edits an `email` block — slice 14 writes it once and never
+  updates it. The receipt is still recorded properly, so if anything ever does
+  edit one the cascade fires; but `/review` would then render it through
+  `ReviewItem`, which resolves no note for it and would say "A note that no
+  longer exists". Unreachable today, wrong the day it is not.
+- `/review`'s "Did not finish" section still tells you to press **Summarise** —
+  slice 12 already noticed that it is wrong for an answer, and it is wrong for an
+  extraction too, where the button is Scan on `/inbox`. Same fix, still not
+  done: `getFailedDerivations` needs the `recipe` treatment `getReviewQueue` got.
+- The nav badge counts stale derivations and nothing else. A mailbox that has
+  just produced six proposals is invisible from every screen except
+  `/settings/email`, which is the screen you have to already be on to find
+  `/inbox` at all. The badge query is in the `(app)` layout — slice 03/11's file
+  — and a second count there is the obvious fix (slice 14 already wanted the
+  `needs_reconnect` banner in the same place, for the same reason).
+- `getInbox` and `scanMailbox` read the **300 most recent messages** and work
+  from those. A proposal made from an email that has since fallen out of that
+  window is still in the table, still blocking its own re-proposal, and no longer
+  on the screen. Three hundred messages is roughly ten times a 30-day sync
+  window at one student's volume, so this is a limit that will not be reached
+  before something else needs changing anyway — but it is a screen that silently
+  shows a subset, which is the kind of thing that is discovered at the worst
+  moment.
+- `getMessage` calls `listGoogleAccounts` every time, so accepting one proposal
+  makes three round trips before it makes a task. It is the same trade
+  `/tasks`, `/courses`, `getUnresolvedQuestions` and `getEmailAccounts` already
+  make, and at one user with one or two accounts it is invisible — but it is
+  ownership being proved by fetching a list and searching it in memory, where
+  slice 14's own RLS policy already expresses the same join in SQL.
+- An email the gate rejects is re-gated on every scan, for ever. That is
+  deliberate — it costs nothing, and it means the day a course is added, mail
+  that was previously ignored starts being noticed — but it also means the
+  "unscanned" count on `/inbox` never falls for a mailbox of newsletters,
+  because only emails that reached the *model* are marked as read. The count is
+  honest about what it says ("new mail not yet read"); it is not the same number
+  as "things that will cost you something".
+- Accepting a class change cannot write the new room, because
+  `modules/courses` has no public way to set one (see the decision above). The
+  room is in the payload and on the card, and the lecture is marked `moved` —
+  the actual room change is still a manual edit on the lecture page. A
+  `setMeetingRoom` in slice 04's module would close it in about six lines.
+- `getInbox` resolves the target lecture with one `getMeeting` per class-change
+  proposal, and the extraction path resolves one with a `getMeetingsOnDate` per
+  item. Both are correct at the handful of proposals a queue should ever hold,
+  and both are loops over rows rather than joins — the same trade every list in
+  this app has made since slice 04.
+- The extraction prompt asks the model to resolve "Friday" against the date the
+  email arrived, and nothing verifies the answer. A wrong date produces a task
+  due on the wrong day, which the user sees on the card *before* accepting —
+  "due Friday 6 March" is right there next to the sentence it came from — but
+  after acceptance nothing rechecks it. Comparing the resolved date against the
+  words in the quote is possible and was not attempted here.

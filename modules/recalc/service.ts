@@ -5,6 +5,7 @@ import { getNoteRefs } from '@/modules/notes';
 
 import {
   derivationsDownstreamOf,
+  derivationsForBlocks,
   inputsGoneMessage,
   readInputs,
   readNoteSources,
@@ -12,6 +13,12 @@ import {
   subjectNoteOf,
 } from './graph';
 import { ANSWER, ANSWER_PROMPT_VERSION, hasNothingToAnswerFrom } from './recipes/answer';
+import {
+  EXTRACT,
+  EXTRACT_PROMPT_VERSION,
+  readStoredItems,
+  type ExtractedItem,
+} from './recipes/extract';
 import {
   SUMMARIZE,
   SUMMARIZE_PROMPT_VERSION,
@@ -293,6 +300,144 @@ async function createAnswerDerivation(
 
   await repo.replaceSources(db, derivation.id, sources);
   return derivation;
+}
+
+// ---------------------------------------------------------------------------
+// Extract from an email
+//
+// The same engine, a third recipe. prompts/15-email-extraction.md, point 2:
+// "Extraction is a derivation... It runs through the slice 11 worker like every
+// other recipe. Do not write a separate pipeline for email." So this is the
+// same nine lines `summariseNote` and `generateAnswer` are: find or create the
+// block and the derivation, seed the receipt, hand the id to the worker.
+//
+// What it does NOT do is write a proposal, a task or anything else. It hands
+// back what the model said, and modules/proposals — which owns
+// `email_proposals` — decides what to do with it.
+// ---------------------------------------------------------------------------
+
+export type ExtractionRun =
+  | { ok: true; derivationId: string; model: string; items: ExtractedItem[] }
+  | { ok: false; derivationId: string | null; error: string };
+
+/**
+ * "Read this email and say what it proposes."
+ *
+ * `emailBlockId` arrives from a browser, so it is proved to be a live `email`
+ * block in this workspace before a block is written or a model is called.
+ *
+ * The cheap gate is deliberately NOT here: by the time this runs, the decision
+ * to spend a call has already been taken by `modules/proposals/gate.ts`, which
+ * is where the sender and the subject can be weighed against the user's own
+ * courses. This function always calls the model.
+ */
+export async function extractFromEmailBlock(
+  db: SupabaseClient,
+  ctx: EngineContext,
+  emailBlockId: string,
+  options: RunOptions = {}
+): Promise<ExtractionRun> {
+  const email = await getBlock(db, emailBlockId);
+  if (
+    !email ||
+    email.workspace_id !== ctx.workspaceId ||
+    email.type !== 'email' ||
+    email.deleted_at !== null
+  ) {
+    throw new Error(`extractFromEmailBlock: no email block ${emailBlockId} in this workspace`);
+  }
+
+  const existing = await findExtractDerivation(db, ctx.workspaceId, email.id);
+  const derivation =
+    existing ??
+    (await createExtractDerivation(db, ctx.workspaceId, {
+      blockId: email.id,
+      version: email.version,
+      text: plainTextOf(email.content),
+    }));
+
+  const result = await runDerivation(db, ctx, derivation.id, options);
+  if (!result.ok) return result;
+
+  // The items are read back out of the block the engine just wrote, rather than
+  // carried out of the recipe by a second route. One write, one read, no way
+  // for the digest a person sees and the list a task is made from to disagree.
+  const written = await getBlock(db, derivation.derived_block_id);
+  return {
+    ok: true,
+    derivationId: derivation.id,
+    model: result.model,
+    items: written ? readStoredItems(written.content) : [],
+  };
+}
+
+/** The extract derivation built from this email block, if there is one. */
+async function findExtractDerivation(
+  db: SupabaseClient,
+  workspaceId: string,
+  emailBlockId: string
+): Promise<Derivation | null> {
+  const downstream = await derivationsDownstreamOf(db, workspaceId, emailBlockId);
+
+  for (const derivation of downstream) {
+    if (derivation.recipe !== EXTRACT) continue;
+    const block = await getBlock(db, derivation.derived_block_id);
+    if (block && block.deleted_at === null) return derivation;
+  }
+
+  return null;
+}
+
+/** The extract block and its derivation, before anything has been generated. */
+async function createExtractDerivation(
+  db: SupabaseClient,
+  workspaceId: string,
+  source: ReadSource
+): Promise<Derivation> {
+  const block = await createBlock(db, {
+    workspaceId,
+    type: 'extract',
+    content: { text: '', items: [] },
+  });
+
+  const derivation = await repo.insert(db, {
+    workspace_id: workspaceId,
+    derived_block_id: block.id,
+    recipe: EXTRACT,
+    model: NOT_YET_RUN,
+    prompt_version: EXTRACT_PROMPT_VERSION,
+    status: 'computing',
+  });
+
+  await repo.replaceSources(db, derivation.id, [source]);
+  return derivation;
+}
+
+/**
+ * Has this email already been read by the engine?
+ *
+ * The answer to "which of these do I still have to spend a call on". One query
+ * for the whole mailbox rather than one per message.
+ */
+export async function emailBlocksAlreadyExtracted(
+  db: SupabaseClient,
+  workspaceId: string,
+  emailBlockIds: string[]
+): Promise<Set<string>> {
+  const done = new Set<string>();
+  if (emailBlockIds.length === 0) return done;
+
+  const derivations = (await derivationsForBlocks(db, workspaceId, emailBlockIds)).filter(
+    (derivation) => derivation.recipe === EXTRACT
+  );
+  if (derivations.length === 0) return done;
+
+  const wanted = new Set(emailBlockIds);
+  const receipts = await repo.listSourcesOfDerivations(db, derivations.map((d) => d.id));
+  for (const row of receipts) {
+    if (wanted.has(row.source_block_id)) done.add(row.source_block_id);
+  }
+  return done;
 }
 
 export type Answer = {

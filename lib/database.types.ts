@@ -430,6 +430,80 @@ export type Database = {
           },
         ]
       }
+      email_proposals: {
+        Row: {
+          confidence: number
+          course_id: string | null
+          created_at: string
+          decided_at: string | null
+          email_id: string
+          fingerprint: string
+          id: string
+          kind: string
+          meeting_id: string | null
+          payload: Json
+          status: string
+          task_id: string | null
+        }
+        Insert: {
+          confidence?: number
+          course_id?: string | null
+          created_at?: string
+          decided_at?: string | null
+          email_id: string
+          fingerprint: string
+          id?: string
+          kind: string
+          meeting_id?: string | null
+          payload?: Json
+          status?: string
+          task_id?: string | null
+        }
+        Update: {
+          confidence?: number
+          course_id?: string | null
+          created_at?: string
+          decided_at?: string | null
+          email_id?: string
+          fingerprint?: string
+          id?: string
+          kind?: string
+          meeting_id?: string | null
+          payload?: Json
+          status?: string
+          task_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_proposals_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_proposals_email_id_fkey"
+            columns: ["email_id"]
+            isOneToOne: false
+            referencedRelation: "email_messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_proposals_meeting_id_fkey"
+            columns: ["meeting_id"]
+            isOneToOne: false
+            referencedRelation: "class_meetings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_proposals_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       files: {
         Row: {
           block_id: string | null

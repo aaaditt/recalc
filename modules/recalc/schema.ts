@@ -72,7 +72,16 @@ export type ReadSource = {
  * cannot be allowed to be assembled separately.
  */
 export type RecipeOutput = {
-  content: { text: string };
+  /**
+   * What lands in the derived block.
+   *
+   * `text` is the part that is hashed — it is what `plainTextOf` reads and
+   * therefore what the whole staleness cascade is made of. A recipe may write
+   * more beside it: slice 15's `extract` puts its structured `items` here so
+   * that the digest a person reads and the list modules/proposals acts on are
+   * written by one `updateBlock` and cannot drift apart.
+   */
+  content: { text: string } & Record<string, unknown>;
   sources: ReadSource[];
   /** Which model produced it, for `derivations.model`. */
   model: string;

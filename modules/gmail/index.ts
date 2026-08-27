@@ -2,7 +2,14 @@
 //
 // Owns `email_messages`. The connection it reads through — `google_accounts`,
 // the refresh token, the scopes — belongs to modules/google.
-export { getEmailAccounts, syncAccount, syncAllAccounts } from './service';
+export {
+  getEmailAccounts,
+  getMessage,
+  getMessages,
+  getRecentMessages,
+  syncAccount,
+  syncAllAccounts,
+} from './service';
 export type { AccountMail, SyncOptions } from './service';
 export {
   GmailHistoryExpired,
