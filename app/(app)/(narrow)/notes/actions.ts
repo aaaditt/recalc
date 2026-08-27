@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation';
 
 import { createClient } from '@/lib/supabase/server';
 import { createStandaloneNote, getStandaloneNote, saveNoteDocument } from '@/modules/notes';
+import { summariseNote } from '@/modules/recalc';
 import { createTask } from '@/modules/tasks';
 import { ensureWorkspace } from '@/modules/workspaces';
 
@@ -23,7 +24,31 @@ async function signedIn() {
   if (!user) throw new Error('not signed in');
 
   const workspace = await ensureWorkspace(supabase, user.id);
-  return { supabase, workspaceId: workspace.id };
+  return { supabase, workspaceId: workspace.id, userId: user.id };
+}
+
+/**
+ * "Summarise this note."
+ *
+ * `docId` comes from the browser and is handed straight to modules/recalc,
+ * which refuses any id that is not a live note document in this workspace
+ * before it writes a block or calls a model.
+ *
+ * Never automatic: docs/PRODUCT.md rule 2 is that nothing regenerates silently,
+ * and that is a product decision rather than a performance one.
+ */
+export async function summariseNoteAction(
+  docId: string
+): Promise<{ ok: boolean; error?: string }> {
+  const { supabase, workspaceId, userId } = await signedIn();
+
+  const result = await summariseNote(supabase, { workspaceId, userId }, docId);
+
+  revalidatePath(`/notes/${docId}`);
+  // The nav badge lives in the shell, and a fresh summary can change the count.
+  revalidatePath('/', 'layout');
+
+  return result.ok ? { ok: true } : { ok: false, error: result.error };
 }
 
 /**

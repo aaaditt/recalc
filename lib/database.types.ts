@@ -261,16 +261,19 @@ export type Database = {
         Row: {
           derivation_id: string
           source_block_id: string
+          source_text: string | null
           source_version: number
         }
         Insert: {
           derivation_id: string
           source_block_id: string
+          source_text?: string | null
           source_version: number
         }
         Update: {
           derivation_id?: string
           source_block_id?: string
+          source_text?: string | null
           source_version?: number
         }
         Relationships: [

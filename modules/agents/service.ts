@@ -17,6 +17,7 @@ import {
   safeMessage,
   saveAgentProfileInputSchema,
   type AgentProfile,
+  type AgentProvider,
   type AgentRole,
   type PublicAgentProfile,
   type SaveAgentProfileInput,
@@ -215,6 +216,79 @@ export async function testAgentConnection(
   } catch (error) {
     return { ok: false, detail: safeMessage(error, spec.apiKey) };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Asking a role for some text
+//
+// Slice 11's engine needs to actually call a model, and CLAUDE.md's Never rule
+// 6 plus `no-provider-sdk.test.ts` say the `ai` package may not be imported
+// outside this module. So the door the engine walks through is a function, not
+// a model object: ask for a role, get back something that turns a prompt into
+// text and reports which model produced it.
+//
+// `derivations.model` is "recorded for audit; app code never chooses this"
+// (docs/SCHEMA.md), which is exactly what comes back here — the provider and
+// model the *user* picked for that role, read out of their own row.
+// ---------------------------------------------------------------------------
+
+/** What one call to a chat role produced, and what produced it. */
+export type Generation = { text: string; model: string };
+
+/**
+ * A bound chat role: prompt in, text out.
+ *
+ * The engine holds one of these rather than a model, which is what keeps model
+ * names — and the provider SDKs — inside this module. It is also the seam the
+ * engine's tests substitute, so worker.ts can be run end to end without a live
+ * provider key.
+ */
+export type Generate = (input: {
+  system?: string;
+  prompt: string;
+  maxOutputTokens?: number;
+}) => Promise<Generation>;
+
+/** How the audit column spells a model. Provider first, so it reads at a glance. */
+export function modelLabel(provider: AgentProvider, model: string): string {
+  return `${provider}/${model}`;
+}
+
+/**
+ * The `deep`/`fast` role, ready to be called.
+ *
+ * Nothing is read or decrypted until the returned function is actually invoked,
+ * so building one is free. `AgentNotConfigured` (no key saved for that role) and
+ * `AgentKeyUnreadable` (ENCRYPTION_KEY changed) come out of the call, where a
+ * caller can turn them into a derivation's `error` status.
+ *
+ * `maxRetries: 0` for the same reason `testAgentConnection` uses it: a summary
+ * is triggered by a person waiting on a screen, and three silent retries of a
+ * call that is going to fail anyway is thirty seconds of nothing happening.
+ */
+export function generateWithRole(
+  db: SupabaseClient,
+  userId: string,
+  role: 'fast' | 'deep'
+): Generate {
+  return async ({ system, prompt, maxOutputTokens }) => {
+    const spec = await modelSpecFor(db, userId, role);
+
+    try {
+      const { text } = await generateText({
+        model: chatModelFor(spec),
+        ...(system ? { system } : {}),
+        prompt,
+        ...(maxOutputTokens ? { maxOutputTokens } : {}),
+        maxRetries: 0,
+      });
+      return { text, model: modelLabel(spec.provider, spec.model) };
+    } catch (error) {
+      // The provider's own words, with the key scrubbed out of them by value
+      // and by shape — some providers echo the key back in a 401.
+      throw new Error(safeMessage(error, spec.apiKey));
+    }
+  };
 }
 
 /** The provider/model menu the settings screen draws. No secrets in it. */

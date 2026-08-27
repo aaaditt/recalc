@@ -96,7 +96,7 @@ const DESTINATIONS: Destination[] = [
   {
     href: '/review',
     label: 'Review',
-    built: false,
+    built: true,
     // Something that came back around.
     icon: (
       <Icon>
@@ -111,8 +111,39 @@ function isCurrent(pathname: string, href: string): boolean {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-export function AppNav() {
+/**
+ * How many things are waiting in /review.
+ *
+ * prompts/11-recalc-engine.md calls this "the number that makes me open the
+ * app", so it is the one piece of chrome that carries the accent — which
+ * docs/DESIGN.md reserves for "something needs attention" and nothing else.
+ * Zero draws nothing at all: a badge that is always there stops being a signal.
+ */
+function StaleBadge({ count, className }: { count: number; className?: string }) {
+  if (count <= 0) return null;
+
+  return (
+    <span
+      aria-label={`${count} waiting in review`}
+      className={cx(
+        'inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5',
+        'bg-accent-bg font-mono text-label font-medium text-accent tabular-nums',
+        className
+      )}
+    >
+      {count > 99 ? '99+' : count}
+    </span>
+  );
+}
+
+type AppNavProps = {
+  /** Stale derivations waiting in /review. Read by the shell, never here. */
+  staleCount?: number;
+};
+
+export function AppNav({ staleCount = 0 }: AppNavProps) {
   const pathname = usePathname();
+  const badgeFor = (href: string) => (href === '/review' ? staleCount : 0);
 
   return (
     <>
@@ -143,6 +174,7 @@ export function AppNav() {
             >
               {destination.icon}
               <span className="truncate">{destination.label}</span>
+              <StaleBadge count={badgeFor(destination.href)} className="ml-auto" />
               {destination.built ? null : (
                 <span className="ml-auto font-mono text-label text-faint uppercase">
                   soon
@@ -177,7 +209,15 @@ export function AppNav() {
                 current ? 'font-medium text-ink' : 'text-faint'
               )}
             >
-              {destination.icon}
+              {/* The badge sits on the icon's top-right corner: a phone column
+                  is 78px and has no room for a number beside the label. */}
+              <span className="relative">
+                {destination.icon}
+                <StaleBadge
+                  count={badgeFor(destination.href)}
+                  className="absolute -top-1 -right-2.5"
+                />
+              </span>
               <span>{destination.label}</span>
             </Link>
           );

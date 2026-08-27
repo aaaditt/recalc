@@ -10,11 +10,13 @@ import {
   saveLectureImageAction,
   saveLectureNoteAction,
   setLectureUnitAction,
+  summariseLectureNoteAction,
 } from './actions';
 import { toggleTaskDoneAction } from '../../tasks/actions';
 import { AttachFiles } from '@/components/files/attach-files';
 import { FileGrid } from '@/components/files/file-grid';
 import { NoteEditor } from '@/components/notes/note-editor';
+import { NoteSummary } from '@/components/notes/note-summary';
 import { TaskItem } from '@/components/tasks/task-item';
 import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
@@ -30,6 +32,7 @@ import { getCourses, getMeeting, getSyllabusUnits } from '@/modules/courses';
 import { getFilesForMeeting } from '@/modules/files';
 import { getGoogleAccount } from '@/modules/google';
 import { getNoteDocument } from '@/modules/notes';
+import { getNoteSummary } from '@/modules/recalc';
 import { getTasksForMeeting } from '@/modules/tasks';
 import { ensureWorkspace } from '@/modules/workspaces';
 
@@ -73,10 +76,13 @@ export default async function LecturePage({
   const course = index === -1 ? null : courses[index];
   const colour = colourForCourse(course?.colour, Math.max(index, 0));
 
-  const [units, note, tasks, files, google] = await Promise.all([
+  const [units, note, summary, tasks, files, google] = await Promise.all([
     course ? getSyllabusUnits(supabase, course.id) : Promise.resolve([]),
     meeting.note_block_id
       ? getNoteDocument(supabase, workspace.id, meeting.note_block_id)
+      : Promise.resolve(null),
+    meeting.note_block_id
+      ? getNoteSummary(supabase, workspace.id, meeting.note_block_id)
       : Promise.resolve(null),
     getTasksForMeeting(supabase, workspace.id, meeting.id),
     getFilesForMeeting(supabase, workspace.id, meeting.id),
@@ -144,6 +150,25 @@ export default async function LecturePage({
           into a deadline that remembers where it came from. Paste a screenshot and it
           lands in Files below.
         </p>
+      </Section>
+
+      <Section label="Summary">
+        <NoteSummary
+          summary={
+            summary
+              ? {
+                  text: summary.text,
+                  status: summary.status,
+                  error: summary.error,
+                  model: summary.model,
+                  computedLabel: summary.computedAt
+                    ? dayTitle(localDateKey(new Date(summary.computedAt), zone))
+                    : null,
+                }
+              : null
+          }
+          summarise={summariseLectureNoteAction.bind(null, meeting.id)}
+        />
       </Section>
 
       <Section label="Files">

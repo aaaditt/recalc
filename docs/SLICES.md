@@ -16,7 +16,7 @@ column as you go — this is how a fresh session knows where we are.
 | 08 | Syllabus — ordered units, status, progress | done |
 | 09 | Google Drive — connect, picker, attach files to lectures | done |
 | 10 | Agents — BYOK settings, encrypted keys, role registry | done |
-| 11 | **Recalc engine** — derivations, first recipe, /review queue | not started |
+| 11 | **Recalc engine** — derivations, first recipe, /review queue | done |
 | 12 | **Questions** — ask-about-selection, open questions per course | not started |
 | 13 | Search — pgvector over versioned embeddings | not started |
 | 14 | Email connect — Gmail OAuth, incremental sync | not started |
@@ -45,6 +45,14 @@ Slice 10 needs the same kind of thing: a real Anthropic, Google or OpenAI API
 key pasted into `/settings/agents`. Every screen renders and every test passes
 without one, but "Test connection" has never been run against a live provider —
 see the last entry under "Noticed, not fixed" in `docs/DECISIONS.md`.
+
+Slice 11 needs that same key, and needs it more: the engine is built, proved
+against the real database and the real cascade, and driven end to end by tests
+over the AI SDK's own mock model — but **no summary in this project has ever
+been written by a real model**. Every status transition, every receipt and
+every screen works without one; what is unverified is whether the summaries a
+live provider returns are any good. Paste a key into `/settings/agents` and
+press Summarise on a note.
 
 ## If you run out of steam
 

@@ -1,12 +1,16 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 
-import { addNoteTaskAction, saveNoteAction } from '../actions';
+import { addNoteTaskAction, saveNoteAction, summariseNoteAction } from '../actions';
 import { NoteEditor } from '@/components/notes/note-editor';
+import { NoteSummary } from '@/components/notes/note-summary';
+import { dayTitle } from '@/lib/calendar';
 import { colourForCourse, courseDot } from '@/lib/course-colours';
 import { createClient } from '@/lib/supabase/server';
+import { localDateKey, localTimeZone } from '@/lib/time';
 import { getCourses } from '@/modules/courses';
 import { getNoteDocument, getStandaloneNote } from '@/modules/notes';
+import { getNoteSummary } from '@/modules/recalc';
 import { ensureWorkspace } from '@/modules/workspaces';
 
 // One note document, open in the editor.
@@ -35,6 +39,8 @@ export default async function NotePage({
   if (!note) notFound();
 
   const standalone = await getStandaloneNote(supabase, workspace.id, note.id);
+  const summary = await getNoteSummary(supabase, workspace.id, note.id);
+  const zone = localTimeZone();
   const courses = await getCourses(supabase, workspace.id);
   const index = courses.findIndex((course) => course.id === standalone?.course_id);
   const course = index === -1 ? null : courses[index];
@@ -73,6 +79,26 @@ export default async function NotePage({
         Select a sentence and press <span className="font-mono">＋ Task</span> to turn it
         into a deadline that remembers where it came from.
       </p>
+
+      <section className="pt-8">
+        <p className="pb-3 font-mono text-label text-faint uppercase">Summary</p>
+        <NoteSummary
+          summary={
+            summary
+              ? {
+                  text: summary.text,
+                  status: summary.status,
+                  error: summary.error,
+                  model: summary.model,
+                  computedLabel: summary.computedAt
+                    ? dayTitle(localDateKey(new Date(summary.computedAt), zone))
+                    : null,
+                }
+              : null
+          }
+          summarise={summariseNoteAction.bind(null, note.id)}
+        />
+      </section>
     </>
   );
 }

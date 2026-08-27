@@ -12,6 +12,7 @@ import {
 } from '@/modules/files';
 import { ensureRecalcFolder, getDriveAccessToken } from '@/modules/google';
 import { ensureLectureNote, saveNoteDocument } from '@/modules/notes';
+import { summariseNote } from '@/modules/recalc';
 import { createTask } from '@/modules/tasks';
 import { ensureWorkspace } from '@/modules/workspaces';
 
@@ -189,6 +190,38 @@ export async function removeLectureFileAction(
   await removeFile(supabase, workspaceId, fileId);
 
   revalidatePath(`/lecture/${meetingId}`);
+}
+
+/**
+ * "Summarise this note."
+ *
+ * Never automatic — docs/PRODUCT.md rule 2 makes that a product decision, not a
+ * performance one. `meetingId` is proved against this workspace first and the
+ * note document is taken from the lecture's own row, so the id that reaches the
+ * engine is never one the browser named. modules/recalc proves it again anyway.
+ */
+export async function summariseLectureNoteAction(
+  meetingId: string
+): Promise<{ ok: boolean; error?: string }> {
+  const { supabase, workspaceId, userId } = await signedIn();
+
+  const meeting = await getMeeting(supabase, workspaceId, meetingId);
+  if (!meeting) throw new Error(`summariseLectureNoteAction: no lecture ${meetingId} here`);
+  if (!meeting.note_block_id) {
+    return { ok: false, error: 'Write something in this note first.' };
+  }
+
+  const result = await summariseNote(
+    supabase,
+    { workspaceId, userId },
+    meeting.note_block_id
+  );
+
+  revalidatePath(`/lecture/${meetingId}`);
+  // The nav badge lives in the shell, and a fresh summary can change the count.
+  revalidatePath('/', 'layout');
+
+  return result.ok ? { ok: true } : { ok: false, error: result.error };
 }
 
 /** One tap: which syllabus unit this lecture covered. Empty clears it. */

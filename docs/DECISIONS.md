@@ -1281,6 +1281,185 @@ provider keys — a gateway would put a second account and a second bill between
 Aadit and his own key), or each provider's first-party SDK (three different
 request shapes, and the stack table says AI SDK).
 
+## 2026-08-27 — The engine asks modules/agents for a *function*, not a model
+Because: prompts/11-recalc-engine.md says to call the model via
+`agents.registry.getModel('deep')`, and `getModel` hands back a raw AI SDK model
+that only `generateText` from the `ai` package can use — which
+`modules/agents/no-provider-sdk.test.ts` forbids importing anywhere outside
+`modules/agents`. That test is slice 10's whole enforcement of Never rule 6 and
+weakening it to satisfy a sentence in a prompt would be the wrong trade. So the
+door is `generateWithRole(db, userId, 'deep')`, which returns
+`Generate = ({ system, prompt }) => Promise<{ text, model }>`: it calls
+`modelSpecFor` and `generateText` *inside* the agents module, and hands the
+engine back the text plus the label for `derivations.model` — the provider and
+model out of the user's own row, never a name chosen in app code. The engine
+still never learns which model answered until after it has answered.
+**And it is the test seam.** `runDerivation` takes an optional `generate`, so
+`modules/recalc/recalc-engine.test.ts` can drive the *real* worker — real status
+transitions, real receipt bookkeeping, real `updateBlock`, real cascade, real
+database — with only the provider's network faked, using the AI SDK's own
+`MockLanguageModelV4` through the real `generateText`. There is no key on this
+machine, so without a seam the only outcome any test could reach is failure.
+The default path is exercised too, honestly: the "no model configured" test
+passes no `generate` at all, so the registry really is asked for the `deep`
+role and really does throw `AgentNotConfigured`.
+Instead of: importing `ai` into `modules/recalc` (deletes the slice-10
+invariant), or `vi.mock`ing the module (which would test a mock's shape rather
+than the worker's behaviour), or leaving the model call unmockable and shipping
+an engine whose success path had never once been executed.
+
+## 2026-08-27 — "Keep old" moves the receipt forward and goes back to `fresh`
+Because: this is a genuine product judgement and there was nobody to ask, so
+here is the reasoning. The alternative — leave it `stale` until an accept — was
+rejected on two grounds. First, the badge. prompts/11-recalc-engine.md calls the
+stale count "the number that makes me open the app"; a number that cannot be
+cleared except by accepting a rewrite you have already decided is worse stops
+being a signal within a week, and /review becomes the graveyard the 30-day
+overdue cap in slice 03 was written to avoid. Second, and more important:
+`derivation_sources` is a *receipt*, and a receipt records what this summary was
+checked against. Pressing Keep old is a check — a person read the diff and
+concluded the summary is still true of the note as it now stands. Recording
+that is honest; leaving the receipt pointing at a version nobody is claiming
+anything about is not.
+So the derived block is untouched (its `version` does not move, so nothing
+downstream of the summary is disturbed), the receipt is rewritten to the
+versions and text the sources are at *now*, and the status goes `fresh`. The
+next real edit stales it again through the same trigger — there is a test named
+for exactly that, because "Keep old" must not be a way to freeze a summary
+forever. The screen says so in one line under the buttons.
+Instead of: staying `stale` (a queue that only grows and a badge that stops
+meaning anything), or a fourth status like `dismissed` (a new state in the one
+state machine the whole product rests on, to express something `fresh` plus an
+updated receipt already says exactly).
+
+## 2026-08-27 — Migration 007 adds `derivation_sources.source_text`
+Because: /review's job is "which sources changed, **and a diff of what changed
+in them**". The receipt already records which block and which version, which is
+everything the cascade needs — but a version number cannot be diffed. Without a
+snapshot of what the block said when it was read, the best the screen could
+manage is "this went from v2 to v3", which is the difference between a receipt
+and an answer. The column is nullable: the rows `staleness.test.ts` and
+`tiptap-staleness.test.ts` write by hand have no snapshot and neither does
+anything predating this slice, and a source with no snapshot renders as changed
+with no before/after rather than an invented one.
+Instead of: keeping the snapshot inside the derived block's `content` jsonb
+(where `plainTextOf` would ignore it, so it *would* work — and it would be a
+second place the source versions live, free to disagree with the receipt), or
+diffing only old summary against new summary, which shows the consequence and
+never the cause.
+
+## 2026-08-27 — A summary block is not a child of its note; the receipt is the link
+Because: `saveNoteDocument` reconciles a note document against the nodes the
+editor sent and soft-deletes every child it does not recognise — so a summary
+parked under the note would be destroyed by the next keystroke. It could have
+been given a `note_id` column instead, but there is a better answer already in
+the schema: the derivation's own sources say what it was built from, and adding
+a column would create a second fact that can disagree with them. So the summary
+block hangs off nothing, and **the note document block is itself recorded as a
+source** — it carries the title, the recipe reads the title, and
+`subjectNoteOf` finds the note by looking for the source that is a note. One
+fact, in the place the product already keeps it.
+Instead of: a `derivations.note_block_id` column (a second source of truth), or
+parenting the summary to the note (deleted on the next autosave).
+
+## 2026-08-27 — Every live child of the note is on the receipt, including the empty ones
+Because: an under-recorded source is a staleness bug that stays completely
+invisible until the day somebody edits that exact block and nothing goes stale.
+An empty paragraph contributes nothing to the prompt, but typing a sentence into
+it later bumps its version — and if it is not on the receipt, that edit cascades
+nowhere. The recipe therefore hands back the very array it built the prompt
+from rather than re-deriving a list of "inputs" beside it, so the two cannot
+drift: `RecipeOutput.sources` *is* what `derivation_sources` is written from.
+Instead of: recording only the paragraphs that had text in them, which is
+smaller, tidier, and wrong.
+
+## 2026-08-27 — The worker re-reads the versions after a run, and fails towards `stale`
+Because: `mark_derivations_stale()` only touches rows whose status is `fresh`.
+While a run is in flight the row says `computing`, so an edit that lands during
+the model call is invisible to the trigger — and the run would then finish by
+writing `fresh` against a version that is already behind. That is a summary
+claiming to be current when it is not, which is the one thing this product may
+never do. So after the status goes fresh, the recorded versions are read once
+more and compared; if one moved, the row is set `stale`. This is emphatically
+not a second implementation of the cascade — it decides nothing about which
+derivations an edit affects, it asks only "did the blocks I just recorded move
+while I was working?" — and it is the single place in TypeScript that writes
+that value, in a repo function named `markStaleAfterRun` so it cannot be reached
+for anything else. `repo.setStatus` does not accept `'stale'` at all, by type.
+There is a test that edits a paragraph from inside the fake model call.
+Instead of: trusting the trigger through the `computing` window (a silent,
+permanent false "up to date" — the exact failure docs/PRODUCT.md is about), or
+never marking `computing` (which loses the "never stuck computing" guarantee the
+slice asks for).
+
+## 2026-08-27 — Accept writes the text that was shown, guarded on the versions
+Because: /review's contract is that you read *this* version and accept *this*
+version. Regenerating on Accept would write something the person never read, and
+a summary is not deterministic. So Regenerate previews (writing nothing at all —
+the row stays stale with its old receipt, so closing the tab costs nothing) and
+Accept posts that text back. The text is client-supplied and that is fine: it is
+the user's own content in their own workspace and they just approved it. The
+*versions* are client-supplied too and that is not fine, so they are used for
+exactly one thing — proving nothing moved in between. What lands on the receipt
+is the server's own fresh read, and if a paragraph changed since the preview the
+accept is refused with a sentence rather than recording a version the summary
+was not built from. `derivations.model` is likewise re-read from the `deep`
+role's own row rather than believed from the browser. There is a test that edits
+the note between the preview and the accept and asserts the refusal leaves
+everything untouched.
+Instead of: regenerating on Accept (accepting a version nobody saw), or trusting
+the posted versions (a forged POST could mark a summary fresh against an edit it
+never read — the staleness invariant, broken from the outside).
+
+## 2026-08-27 — Nothing is regenerated on a page render, only on a press
+Because: docs/PRODUCT.md rule 2 makes this a product decision rather than a
+performance one, and the literal reading of "the current derived content and the
+regenerated version side by side" would mean a model call per stale item every
+time /review is opened — money spent, and the app quietly deciding things on its
+own, which is the behaviour the whole product exists to refuse. So the *diff of
+the note* is on screen the moment the page loads, computed from the receipt with
+no model involved at all, and the right-hand column says in plain words that
+nothing has been generated yet and what pressing Regenerate will cost.
+Instead of: generating every preview on load (silent regeneration by another
+name), or showing no new version at all until after accepting (accepting
+something unseen).
+
+## 2026-08-27 — `lib/diff.ts` is a word-level LCS, not a dependency
+Because: it is about seventy lines and it is the part of /review that can be
+silently wrong, so it belongs where `lib/today.ts`, `lib/calendar.ts`,
+`lib/tasks.ts`, `lib/study.ts`, `lib/syllabus.ts` and `lib/files.ts` already
+are: a pure function in /lib with its own test. `lib/diff.test.ts` asserts the
+property that actually matters — dropping the additions rebuilds the old text
+exactly and dropping the removals rebuilds the new one — because a diff that
+renders a sentence nobody wrote is worse than no diff. Above 1200 words on
+either side it degrades to a whole-block replace rather than building a
+million-cell table.
+Instead of: `diff` or `jsdiff` from npm (rule 10, for an algorithm this size),
+or a line-level diff, which would call a fixed typo a rewritten paragraph.
+
+## 2026-08-27 — The stale badge is read in the `(app)` layout
+Because: the badge has to be on every screen and the layout is the only thing
+that renders on every screen. It is one indexed `count` on
+`derivations (workspace_id, status)` — the index migration 001 created for
+exactly this — and every action that changes the queue calls
+`revalidatePath('/', 'layout')` so the number cannot lie. Zero draws nothing at
+all: a badge that is always present stops being a signal. It is also the third
+place `--accent` appears, and deliberately so — docs/DESIGN.md reserves it for
+"something needs attention", and this *is* the thing that needs attention.
+Instead of: fetching it in each page (five call sites, four chances to forget),
+or a client-side poll (a request every few seconds for a number that changes
+when the user changes it).
+
+## 2026-08-27 — One migration, no dependencies, in slice 11
+Because (rule 10): nothing was installed. `derivations`,
+`derivation_sources` and the cascade trigger have existed since migration 001
+and were not touched — the trigger's SQL is byte-for-byte what slice 00 applied.
+`supabase/migrations/007_recalc.sql` adds one nullable column and a comment.
+Its history row was applied through the Supabase MCP, which stamps a timestamp
+version, and was rewritten to `007`/`recalc` immediately afterwards for the same
+reason slices 09 and 10 did it: `npm run db:push` only works while the history
+matches the filenames.
+
 ---
 
 ## Noticed, not fixed
@@ -1529,14 +1708,78 @@ Things spotted outside the current slice. Do not fix them mid-slice; write them 
   will hold the Server Action open until the platform's own limit. The AI SDK
   takes a `timeout`, so this is a one-line fix — it was left out because a
   number picked without ever having watched the call succeed is a guess.
-- Nothing calls `getModel` yet except the Test connection button. The registry
+- ~~Nothing calls `getModel` yet except the Test connection button. The registry
   is built and proved, but slice 11 is the first real consumer, and the shape
   of "degrade with a clear message" will only be exercised properly when there
   is a feature to degrade. `AgentNotConfigured` and `AgentKeyUnreadable` exist
-  for it to catch.
+  for it to catch.~~ **Answered in slice 11** — see the entry near the bottom of
+  this list.
 - `MODEL_CHOICES` will go stale. It is three suggestions per provider, typed by
   hand from what each provider offered in August 2026, and nothing checks it
   against a live model list. The "or type a model id" box is the escape hatch
   and is why this is a nuisance rather than a bug — but a `GET /v1/models` per
   provider would keep the picker honest, and is worth doing the day one of
   these ids is retired.
+- ~~Nothing calls `getModel` yet except the Test connection button... slice 11
+  is the first real consumer.~~ **Slice 11 is that consumer** — through
+  `generateWithRole`, which wraps `modelSpecFor` + `generateText` so the `ai`
+  package stays inside `modules/agents` (see the decision above). Both named
+  errors are caught by `worker.ts` and become a derivation's `error` status.
+- **No summary in this project has ever been written by a real model.** There
+  is still no Anthropic, Google or OpenAI key on this machine, and
+  `agent_profiles` is empty. What *is* proved: the whole of `worker.ts` end to
+  end against the real database and the real trigger, with only the provider's
+  network faked through the AI SDK's own `MockLanguageModelV4`
+  (`modules/recalc/recalc-engine.test.ts`, 20 tests) — status transitions, the
+  receipt's versions and snapshots, the write through `modules/blocks`,
+  regeneration being safe to run twice, the accept guard, every ownership
+  refusal, and the failure path with *no* stand-in at all (the registry really
+  is asked for the `deep` role and really does throw `AgentNotConfigured`, and
+  the row ends at `error`); the diff (`lib/diff.test.ts`); and — against the
+  running dev server, with a throwaway signed-in user since deleted — that
+  `/review` renders a stale summary with a real word-level diff (`NOT` added,
+  `cell.` struck through, `cell, despite the meme.` added), the note page shows
+  its summary marked "Out of date", and the nav badge renders. **What is not
+  proved is whether the summaries are any good**: the wording of the prompt in
+  `recipes/summarize.ts`, whether 3–6 sentences is the right shape, whether
+  `maxOutputTokens: 700` truncates a long lecture, and how a real provider's
+  errors read on screen. All of that needs a key, and all of it is a wording
+  change rather than a structural one.
+- **A newly added paragraph does not stale its note's summary.** The cascade
+  fires on a version bump of a block already on the receipt, and a brand-new
+  paragraph is a brand-new block that no receipt names. Editing or emptying an
+  existing paragraph works exactly as advertised; *adding* one is invisible
+  until the next regeneration. Every live child is recorded precisely so that
+  the case which *can* be caught is caught (see the decision above), but closing
+  this properly needs the note document's own version to move when its set of
+  children changes — which is a change to `modules/notes`/`modules/blocks`, not
+  to `modules/recalc` (rule 9). It is the single biggest remaining hole in the
+  product's central claim and deserves its own small piece of work.
+- **Soft-deleting a paragraph does not stale anything either**, for the same
+  reason: `softDeleteBlock` sets `deleted_at` and deliberately does not touch
+  `version`, so the trigger never fires. `/review` renders such a source as
+  "This paragraph has been deleted." if the derivation is stale for some other
+  reason, but the deletion alone will not put it there. Same fix, same owner.
+- Two *simultaneous* presses of Summarise on a note that has never been
+  summarised could create two summary blocks. Sequential runs cannot — the
+  second finds the first and reuses it, and there is a test for that — but there
+  is no unique index to make it impossible, because there is no column to put
+  one on (the note link lives in `derivation_sources`, see the decision above).
+  One button, one user, one tab: not worth a migration today.
+- `getReviewQueue` reads each stale derivation's sources, derived block and note
+  one at a time. That is the same trade `/tasks` and `/courses` already make and
+  it is correct at the handful of rows a stale queue should ever hold — if the
+  queue is long enough for this to matter, the queue being long is the problem.
+- The `(app)` layout now makes one extra query on every signed-in page render.
+  It is a `count` on an existing index and it buys the badge on every screen,
+  but it is the first time the shell touches the database at all, and it means
+  every page pays for it whether or not the nav is visible.
+- `AppNav`'s `built: false` branch (the small "soon" label) is now dead: all
+  five destinations are built. Left in place because slice 12 adds Questions and
+  will want it again; delete it if that turns out not to be true.
+- Running the whole suite against the live Supabase project intermittently fails
+  with `TypeError: fetch failed` or a 30s timeout when 27 files hit the remote
+  project at once — it happened once during this slice and passed cleanly on a
+  re-run. Nothing is wrong with the tests; the project is remote and vitest runs
+  files in parallel. If it becomes routine, `maxConcurrency` or a
+  `--pool=threads --poolOptions.threads.singleThread` run is the lever.
