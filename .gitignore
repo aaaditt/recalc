@@ -39,3 +39,13 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# personal reference material — never commit
+last_sem.jpeg
+*.jpeg
+*.jpg
+!public/**/*.jpg
+!public/**/*.jpeg
+
+# local MCP config — holds the Supabase project ref
+.mcp.json
