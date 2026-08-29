@@ -1,3 +1,8 @@
 // Public API of the workspaces module. Import only from here.
-export { ensureWorkspace } from './service';
-export { workspaceSchema, type Workspace } from './schema';
+export { ensureWorkspace, getWorkspace, setTerm } from './service';
+export {
+  workspaceSchema,
+  termInputSchema,
+  type Workspace,
+  type TermInput,
+} from './schema';

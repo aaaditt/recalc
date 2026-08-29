@@ -21,6 +21,7 @@ column as you go — this is how a fresh session knows where we are.
 | 13 | Search — pgvector over versioned embeddings | done |
 | 14 | Email connect — Gmail OAuth, incremental sync | done |
 | 15 | Email extraction — proposals queue | done |
+| 16 | **Timetable** — the period grid, click a cell to add or edit a class | done |
 
 ## Why this order
 

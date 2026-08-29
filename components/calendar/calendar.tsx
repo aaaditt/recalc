@@ -314,6 +314,12 @@ export function Calendar(props: CalendarProps) {
             {/* The bottom nav is full at five columns (docs/DECISIONS.md), so
                 /courses is reached from here, exactly as /settings/semester is. */}
             <Link
+              href="/timetable"
+              className="text-13 text-muted underline-offset-4 hover:text-ink hover:underline"
+            >
+              Timetable
+            </Link>
+            <Link
               href="/courses"
               className="text-13 text-muted underline-offset-4 hover:text-ink hover:underline"
             >
@@ -349,16 +355,25 @@ export function Calendar(props: CalendarProps) {
             title="No lectures yet"
             description={
               props.courses.length === 0
-                ? 'Add your courses and their weekly sessions first — docs/SEEDING.md has the steps.'
+                ? 'Draw your week on the timetable first — click a cell, name the course, done.'
                 : 'Your timetable is here but the term has not been expanded into lectures yet.'
             }
             action={
-              <Link
-                href="/settings/semester"
-                className="text-13 text-muted underline underline-offset-4 hover:text-ink"
-              >
-                Generate this term&rsquo;s lectures
-              </Link>
+              props.courses.length === 0 ? (
+                <Link
+                  href="/timetable"
+                  className="text-13 text-muted underline underline-offset-4 hover:text-ink"
+                >
+                  Fill in your timetable
+                </Link>
+              ) : (
+                <Link
+                  href="/settings/semester"
+                  className="text-13 text-muted underline underline-offset-4 hover:text-ink"
+                >
+                  Generate this term&rsquo;s lectures
+                </Link>
+              )
             }
           />
         </div>

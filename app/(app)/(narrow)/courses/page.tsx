@@ -66,12 +66,20 @@ export default async function CoursesPage() {
         title="Courses"
         subtitle="Your syllabus, in order, and what you have actually covered."
         actions={
-          <Link
-            href="/settings/semester"
-            className="text-13 text-muted underline-offset-4 hover:text-ink hover:underline"
-          >
-            Semester
-          </Link>
+          <>
+            <Link
+              href="/timetable"
+              className="text-13 text-muted underline-offset-4 hover:text-ink hover:underline"
+            >
+              Timetable
+            </Link>
+            <Link
+              href="/settings/semester"
+              className="text-13 text-muted underline-offset-4 hover:text-ink hover:underline"
+            >
+              Semester
+            </Link>
+          </>
         }
       />
 
@@ -79,7 +87,15 @@ export default async function CoursesPage() {
         {rows.length === 0 ? (
           <EmptyState
             title="No courses yet"
-            description="Add your courses and their weekly sessions first — docs/SEEDING.md has the steps."
+            description="Courses arrive with your timetable — click a cell there and name the course."
+            action={
+              <Link
+                href="/timetable"
+                className="text-13 text-muted underline underline-offset-4 hover:text-ink"
+              >
+                Fill in your timetable
+              </Link>
+            }
           />
         ) : (
           <ul className="divide-y divide-line">

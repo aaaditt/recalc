@@ -1973,6 +1973,106 @@ enabled and all four policies (rule 8), ownership flowing through `email_id` to
 `email_messages` to `google_accounts.user_id` exactly as slice 14's table does;
 the unique index the slice's second promise depends on; and three read indexes.
 
+## 2026-08-29 — `periods` is a new table; there is no `calendars` table
+Because: Aadit's printed timetable has numbered periods down the side, not clock
+hours — "3rd, 09:20–10:10" is the row heading on the paper, so it has to be a row
+the app can read. Nine rows of `(position, label, starts_at, ends_at)`, per
+workspace, seeded by migration 012 and editable from slice 17.
+Instead of: a "multiple calendars" concept, which is a second timetable and a
+second answer to "when is my next class". A period is only the *row* a session
+sits on. `sessions` is still the weekly pattern and `class_meetings` are still
+the dated lectures; nothing about docs/SCHEMA.md's distinction moved.
+
+## 2026-08-29 — `sessions.starts_at` stays authoritative, `period_id` is a hint
+Because: a session records the time a class actually meets. If the grid read its
+times through `period_id` instead, editing the 3rd period's start from 09:20 to
+09:30 in slice 17 would silently move every lecture already generated from it,
+including ones with notes on them. Writing the period's times *into* the session
+at add-time means a later period edit changes the grid's row heading and nothing
+else, until the class is deliberately re-saved.
+Instead of: a join, which is tidier and is the exact shape of the bug this whole
+project exists to avoid.
+
+## 2026-08-29 — `is_lab` boolean, not a `kind` enum
+Because: the image marks cells "LAB" and marks nothing else. A lab is the same
+weekly slot with a different room and a different feel. One boolean, one badge.
+Instead of: `kind text` with a check constraint and one value in it, which is an
+enum waiting for a second member that has not been asked for.
+
+## 2026-08-29 — Term dates live on `workspaces`
+Because: "add this class and generate the rest of its term" needs to know when
+term ends, and until now those two dates were retyped into `/settings/semester`'s
+form every single time. They are a fact about the workspace, both nullable, and
+`/timetable` saves them once.
+Instead of: asking for them in the add-a-class sheet (four fields where two
+should be zero), or a `terms` table, which is a real thing to build the day a
+course spans two terms and is nothing but ceremony before then.
+
+## 2026-08-29 — There is still exactly one meeting generator
+Because: slice 04's `generateMeetings` is already additive and idempotent — it
+creates only the lectures that do not exist, brings untouched ones back into
+line, and never modifies or duplicates one carrying a note, a topic, a unit or a
+cancellation (`modules/courses/meetings.test.ts`). Adding or editing a class from
+the grid calls it over `[max(today, term_start) .. term_end]` and does nothing
+else. `max(today, …)` is why adding a class in week six does not invent five
+weeks of lectures that never happened.
+Instead of: a second generator scoped to one session, which would be a second
+place for the "never regenerate wholesale" rule to be got wrong.
+
+## 2026-08-29 — Removing a class deletes only future, untouched, unlinked lectures
+Because: docs/SCHEMA.md's warning is about losing notes, and the honest reading of
+it is that a timetable edit may never destroy work. `removeClass` keeps any
+lecture that has a note, a topic, a syllabus unit, a status other than
+`scheduled`, an attached file or a task set in it — **and** any lecture that has
+already happened, which is the record that it happened. Everything else was only
+ever a consequence of the pattern, so it goes. A kept lecture loses its
+`session_id` (`on delete set null`) and stays on the calendar intact.
+Instead of: refusing the removal outright (which leaves a wrong grid you cannot
+fix), or deleting everything (which is the mistake). The worst case here is a
+lecture left on the calendar that no longer happens — visible, and one tap to
+cancel. The worst case the other way has no undo.
+
+## 2026-08-29 — The delete decision lives in `modules/timetable`, not `modules/courses`
+Because: "is this lecture safe to delete" needs files and tasks as well as notes,
+and both `modules/files` and `modules/tasks` already import `modules/courses`.
+Asking the question from the new module keeps that arrow pointing one way.
+`modules/courses` gained `removeMeetings`, which takes explicit ids and throws on
+any that has been hand-edited — deliberately not "delete the meetings for session
+X", because that shape is how a term of notes gets lost.
+Instead of: a cross-module cycle, or a second copy of "has this been written on".
+There is one definition, `isHandEdited` in `modules/courses/service.ts`, exported
+as `meetingWasHandEdited`.
+
+## 2026-08-29 — The grid scrolls sideways inside its own container
+Because: five columns at their 116px floor is 672px and a phone is 390px.
+docs/DESIGN.md's rule is that the page body never scrolls sideways, so the grid
+does, with the period column pinned (`sticky left-0`) so the row you are reading
+is always labelled. Three new tokens in `app/globals.css` —
+`--timetable-row-height`, `--timetable-label-width`, `--timetable-column-min` —
+derived from numbers DESIGN.md does give (the 44px tap target, the 56px time
+gutter) rather than picked fresh.
+Instead of: a day-at-a-time mobile view, which is `/calendar`'s job and already
+built; the timetable is the one screen whose whole point is seeing the week at
+once.
+
+## 2026-08-29 — One migration, no dependencies, in slice 16
+Because (rule 10): nothing was installed.
+`supabase/migrations/012_timetable.sql` creates `periods` with RLS enabled and
+all four policies (rule 8), adds `sessions.period_id` and `sessions.is_lab`, adds
+`workspaces.term_start` / `term_end`, and seeds the nine periods for every
+workspace that already existed. A workspace created *after* it gets the same nine
+from `modules/timetable`'s idempotent `getPeriods`, which on the live (empty)
+database is the path that will actually run.
+
+## 2026-08-29 — `docs/SEEDING.md` is now partly superseded, and was not rewritten
+Because: steps 1, 2 and 4 of it — typing `courses`, typing `sessions`, and
+running `scripts/seed-check.ts --generate` — are what `/timetable` replaces.
+Rewriting it is slice 17's job, along with the settings screens for course
+colours, instructors, syllabus units and period times. Rule 9 says the slice you
+were asked for and nothing else.
+Instead of: editing it now and leaving a document that half-describes a screen
+that does not exist yet.
+
 ---
 
 ## Noticed, not fixed
@@ -2543,3 +2643,54 @@ Things spotted outside the current slice. Do not fix them mid-slice; write them 
   "due Friday 6 March" is right there next to the sentence it came from — but
   after acceptance nothing rechecks it. Comparing the resolved date against the
   words in the quote is possible and was not attempted here.
+- **`npm run db:push` cannot reach this project from this machine.** The CLI
+  connects to `aws-0-ap-southeast-2.pooler.supabase.com` on the Postgres port and
+  times out; `npm run db:types` works, because it goes over HTTPS. Migration 012
+  was therefore applied through the Supabase management API and its history row
+  (`012` / `timetable`) inserted into `supabase_migrations.schema_migrations` by
+  hand, so the file, the database and the history all agree and a future
+  `db:push` from a machine that *can* reach the pooler will skip it. Worth
+  checking whether this is the network here or an outbound rule, because the
+  next slice will hit it too.
+- `/timetable` renders Monday to Friday and nothing else, because the printed
+  timetable does. A Saturday session is not lost — it is still on the calendar,
+  and the grid says so in one line under it — but it cannot be added or edited
+  from the grid. Widening `WEEKDAYS` in `lib/timetable.ts` is the whole change,
+  and detecting weekend classes the way `/calendar` already does is the version
+  worth building.
+- The grid has no "+1" row. `last_sem.jpeg` has a tenth, unnumbered row at the
+  bottom for a class that lands outside the nine periods, and it is not seeded:
+  it has no times, and a period row with no times cannot place a session. It is a
+  period like any other once slice 17 can add one, so it was left to the screen
+  that can.
+- **A file attached to a future lecture that has no note on it now blocks that
+  lecture's deletion, and a course's colour still cannot be changed after
+  creation.** The first is deliberate (see the removal decision above); the
+  second is slice 17's. Today the colour is chosen once, in the add-a-class
+  sheet, and after that `/timetable` and `/calendar` both fall back to the
+  palette by position — so creating a course, then another, does not reshuffle
+  the first one's colour, but nothing can correct a wrong choice.
+- `updateClass` regenerates the *whole workspace's* remaining term, not just the
+  session that changed. That is `generateMeetings`' contract and it is the safe
+  direction — every untouched lecture is brought back into line, and every edited
+  one is left alone — but it means one room correction reads and rewrites every
+  course's remaining lectures. Correct at one student's scale; it is a full
+  expansion of the term per keystroke-sized edit, and the obvious lever is a
+  `sessionIds` filter on `generateMeetings` rather than anything cleverer.
+- `getSessions` in `modules/courses` lists courses and then lists their sessions
+  — two round trips, the same trade `/tasks`, `/courses` and `getEmailAccounts`
+  already make. A join would be one, and RLS already expresses it in SQL.
+- The nine default periods now exist in two places: the seed in migration 012 and
+  `DEFAULT_PERIODS` in `modules/timetable/schema.ts`. They cannot be one, because
+  a workspace created after the migration ran has to get them from somewhere, and
+  the migration is append-only. They will disagree the day someone edits one, and
+  the SQL half is the one that is already applied and therefore frozen — so
+  `DEFAULT_PERIODS` is the live copy and the SQL is history. Say so out loud if
+  the defaults ever change.
+- `/timetable` is reached from the header of `/calendar` and `/courses`, and from
+  the calendar's empty state. It is not in the nav, because the nav is full at
+  six columns (slice 13's decision, unchanged). That is now the *fourth* screen
+  behind a link rather than a destination — `/inbox`, `/settings/*`, `/timetable`
+  — and the "one needs-you surface" note in SLICES.md is really the same
+  complaint. The calendar header is at four links on a phone and is the next
+  thing to overflow.

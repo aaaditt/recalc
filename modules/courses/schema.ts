@@ -30,7 +30,61 @@ export const sessionSchema = z.object({
   room: z.string().nullable(),
   valid_from: z.string().nullable(),
   valid_until: z.string().nullable(),
+  // Slice 16. Which row of the printed period grid this slot sits on — a
+  // convenience for /timetable, never the source of truth for the time.
+  // starts_at/ends_at stay authoritative, so editing a period later cannot
+  // silently move lectures that have already been generated.
+  period_id: z.uuid().nullable(),
+  is_lab: z.boolean(),
   created_at: z.string(),
+});
+
+/** A subject code, as it is written on the printed timetable. */
+export const courseCodeSchema = z
+  .string()
+  .trim()
+  .min(1, 'a course needs a code')
+  .max(20, 'that is a name, not a code');
+
+export const courseNameSchema = z
+  .string()
+  .trim()
+  .min(1, 'a course needs a name')
+  .max(120, 'that is a syllabus, not a course name');
+
+/** A room, as written in the little number in the corner of the cell: '257'. */
+export const roomSchema = z.string().trim().max(40).nullable().optional();
+
+export const createCourseInputSchema = z.object({
+  workspaceId: z.uuid(),
+  code: courseCodeSchema,
+  name: courseNameSchema,
+  term: z.string().trim().min(1).max(60),
+  // A course-colour token name from lib/course-colours, never a hex value.
+  colour: z.string().trim().min(1).max(20).nullable().optional(),
+});
+
+/** One weekly slot: this course, this weekday, between these two times. */
+export const createSessionInputSchema = z.object({
+  workspaceId: z.uuid(),
+  courseId: z.uuid(),
+  weekday: weekdaySchema,
+  startsAt: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/, 'expected HH:MM'),
+  endsAt: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/, 'expected HH:MM'),
+  room: roomSchema,
+  isLab: z.boolean().optional(),
+  periodId: z.uuid().nullable().optional(),
+});
+
+/** What a filled cell's edit form can change. Everything is optional. */
+export const updateSessionInputSchema = z.object({
+  courseId: z.uuid().optional(),
+  weekday: weekdaySchema.optional(),
+  startsAt: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/).optional(),
+  endsAt: z.string().regex(/^\d{2}:\d{2}(:\d{2})?$/).optional(),
+  room: roomSchema,
+  isLab: z.boolean().optional(),
+  periodId: z.uuid().nullable().optional(),
 });
 
 export const syllabusUnitStatusSchema = z.enum([
@@ -124,6 +178,9 @@ export const rescheduleMeetingInputSchema = z.object({
 
 export type Course = z.infer<typeof courseSchema>;
 export type Session = z.infer<typeof sessionSchema>;
+export type CreateCourseInput = z.input<typeof createCourseInputSchema>;
+export type CreateSessionInput = z.input<typeof createSessionInputSchema>;
+export type UpdateSessionInput = z.input<typeof updateSessionInputSchema>;
 export type SyllabusUnit = z.infer<typeof syllabusUnitSchema>;
 export type SyllabusUnitStatus = z.infer<typeof syllabusUnitStatusSchema>;
 export type CreateSyllabusUnitInput = z.input<typeof createSyllabusUnitInputSchema>;

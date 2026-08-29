@@ -11,9 +11,12 @@ import {
 } from '@/lib/time';
 import * as repo from './repo';
 import {
+  createCourseInputSchema,
   createOneOffMeetingInputSchema,
+  createSessionInputSchema,
   createSyllabusUnitInputSchema,
   generateMeetingsInputSchema,
+  updateSessionInputSchema,
   meetingStatusSchema,
   rescheduleMeetingInputSchema,
   syllabusUnitStatusSchema,
@@ -21,8 +24,11 @@ import {
   unitMoveSchema,
   type ClassMeeting,
   type Course,
+  type CreateCourseInput,
   type CreateOneOffMeetingInput,
+  type CreateSessionInput,
   type CreateSyllabusUnitInput,
+  type UpdateSessionInput,
   type GenerateMeetingsInput,
   type GenerateMeetingsResult,
   type MeetingStatus,
@@ -59,6 +65,178 @@ export async function getSyllabusUnits(
   courseId: string
 ): Promise<SyllabusUnit[]> {
   return repo.listSyllabusUnits(db, courseId);
+}
+
+/** Every weekly pattern row for this workspace's courses. What /timetable draws. */
+export async function getSessions(
+  db: SupabaseClient,
+  workspaceId: string,
+  term?: string
+): Promise<Session[]> {
+  const courses = await repo.listCourses(db, workspaceId, term);
+  return repo.listSessions(
+    db,
+    courses.map((course) => course.id)
+  );
+}
+
+/** One weekly pattern row, proved to belong to this workspace. Null otherwise. */
+export async function getSession(
+  db: SupabaseClient,
+  workspaceId: string,
+  id: string
+): Promise<Session | null> {
+  const session = await repo.findSession(db, id);
+  if (!session) return null;
+  const course = await repo.findCourse(db, workspaceId, session.course_id);
+  return course ? session : null;
+}
+
+/** Every lecture this weekly pattern has ever produced, earliest first. */
+export async function getMeetingsForSession(
+  db: SupabaseClient,
+  workspaceId: string,
+  sessionId: string
+): Promise<ClassMeeting[]> {
+  const session = await getSession(db, workspaceId, sessionId);
+  if (!session) throw new Error(`getMeetingsForSession: no session ${sessionId} here`);
+  return repo.listMeetingsForSession(db, sessionId);
+}
+
+// ---------------------------------------------------------------------------
+// Courses and weekly patterns — slice 16
+//
+// Until this slice both were typed into the Supabase table editor
+// (docs/SEEDING.md). Everything below is the same two inserts, with the
+// ownership checks the table editor never made.
+// ---------------------------------------------------------------------------
+
+/** A new subject. `code` is unique per workspace and term — the DB enforces it. */
+export async function createCourse(
+  db: SupabaseClient,
+  input: CreateCourseInput
+): Promise<Course> {
+  const parsed = createCourseInputSchema.parse(input);
+  return repo.insertCourse(db, {
+    workspace_id: parsed.workspaceId,
+    code: parsed.code,
+    name: parsed.name,
+    term: parsed.term,
+    colour: parsed.colour ?? null,
+  });
+}
+
+/**
+ * One weekly slot. This writes the *pattern* and nothing else — no dated
+ * lecture is created here, because turning a pattern into lectures needs term
+ * dates and is `generateMeetings`' job.
+ */
+export async function createSession(
+  db: SupabaseClient,
+  input: CreateSessionInput
+): Promise<Session> {
+  const parsed = createSessionInputSchema.parse(input);
+  await ownedCourse(db, parsed.workspaceId, parsed.courseId);
+
+  if (parsed.endsAt <= parsed.startsAt) {
+    throw new Error('createSession: a class cannot end before it starts');
+  }
+
+  return repo.insertSession(db, {
+    course_id: parsed.courseId,
+    weekday: parsed.weekday,
+    starts_at: parsed.startsAt,
+    ends_at: parsed.endsAt,
+    room: parsed.room?.trim() ? parsed.room.trim() : null,
+    is_lab: parsed.isLab ?? false,
+    period_id: parsed.periodId ?? null,
+  });
+}
+
+/**
+ * Change one weekly slot: a different course in that cell, a different room, a
+ * lab rather than a lecture.
+ *
+ * This touches the pattern only. Bringing already-generated lectures back into
+ * line is `generateMeetings`, which does it additively and refuses to touch a
+ * lecture anyone has written on.
+ */
+export async function updateSession(
+  db: SupabaseClient,
+  workspaceId: string,
+  id: string,
+  input: UpdateSessionInput
+): Promise<Session> {
+  const parsed = updateSessionInputSchema.parse(input);
+
+  const session = await getSession(db, workspaceId, id);
+  if (!session) throw new Error(`updateSession: no session ${id} in this workspace`);
+
+  // Moving a slot to another course is moving it to another course this
+  // workspace owns, and nowhere else.
+  if (parsed.courseId && parsed.courseId !== session.course_id) {
+    await ownedCourse(db, workspaceId, parsed.courseId);
+  }
+
+  const startsAt = parsed.startsAt ?? session.starts_at;
+  const endsAt = parsed.endsAt ?? session.ends_at;
+  if (endsAt <= startsAt) {
+    throw new Error('updateSession: a class cannot end before it starts');
+  }
+
+  return repo.updateSessionRow(db, id, {
+    ...(parsed.courseId ? { course_id: parsed.courseId } : {}),
+    ...(parsed.weekday === undefined ? {} : { weekday: parsed.weekday }),
+    ...(parsed.startsAt ? { starts_at: parsed.startsAt } : {}),
+    ...(parsed.endsAt ? { ends_at: parsed.endsAt } : {}),
+    ...(parsed.room === undefined
+      ? {}
+      : { room: parsed.room?.trim() ? parsed.room.trim() : null }),
+    ...(parsed.isLab === undefined ? {} : { is_lab: parsed.isLab }),
+    ...(parsed.periodId === undefined ? {} : { period_id: parsed.periodId }),
+  });
+}
+
+/**
+ * Drop one weekly pattern row, and only that row.
+ *
+ * Every lecture it produced survives — `class_meetings.session_id` is
+ * `on delete set null`. Which of those lectures should actually be removed is a
+ * judgement about notes, files and tasks, and it is made by modules/timetable
+ * *before* this is called. Nothing here deletes a meeting.
+ */
+export async function removeSession(
+  db: SupabaseClient,
+  workspaceId: string,
+  id: string
+): Promise<void> {
+  const session = await getSession(db, workspaceId, id);
+  if (!session) throw new Error(`removeSession: no session ${id} in this workspace`);
+  await repo.deleteSession(db, id);
+}
+
+/**
+ * Delete these exact lectures. The caller names every id, having already
+ * checked each one carries nothing — this is deliberately not "delete the
+ * meetings for session X", because that shape is how a term's notes get lost.
+ */
+export async function removeMeetings(
+  db: SupabaseClient,
+  workspaceId: string,
+  ids: string[]
+): Promise<number> {
+  const safe: string[] = [];
+  for (const id of ids) {
+    const meeting = await repo.findMeeting(db, workspaceId, id);
+    if (!meeting) throw new Error(`removeMeetings: no meeting ${id} in this workspace`);
+    // Last line of defence. A caller that has miscounted still cannot destroy a
+    // lecture that has been written on.
+    if (isHandEdited(meeting)) {
+      throw new Error(`removeMeetings: meeting ${id} has been edited by hand`);
+    }
+    safe.push(id);
+  }
+  return repo.deleteMeetings(db, safe);
 }
 
 /** Every lecture on one local calendar day, earliest first. */
@@ -437,6 +615,17 @@ function isHandEdited(meeting: ClassMeeting): boolean {
     meeting.unit_id !== null ||
     meeting.status !== 'scheduled'
   );
+}
+
+/**
+ * The same question, asked from outside the module.
+ *
+ * modules/timetable has to answer "may this lecture be deleted?" and there must
+ * be exactly one definition of "this lecture has been written on" in the
+ * project. This is it.
+ */
+export function meetingWasHandEdited(meeting: ClassMeeting): boolean {
+  return isHandEdited(meeting);
 }
 
 function appliesOn(session: Session, date: CalendarDate): boolean {

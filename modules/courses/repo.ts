@@ -48,6 +48,95 @@ export async function listSessions(
   return (data ?? []).map((row) => sessionSchema.parse(row));
 }
 
+/** One weekly pattern row by id, or null. */
+export async function findSession(
+  db: SupabaseClient,
+  id: string
+): Promise<Session | null> {
+  const { data, error } = await db
+    .from('sessions')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) throw new Error(`courses.findSession: ${error.message}`);
+  return data ? sessionSchema.parse(data) : null;
+}
+
+export type NewCourseRow = {
+  workspace_id: string;
+  code: string;
+  name: string;
+  term: string;
+  colour: string | null;
+};
+
+export async function insertCourse(
+  db: SupabaseClient,
+  row: NewCourseRow
+): Promise<Course> {
+  const { data, error } = await db.from('courses').insert(row).select('*').single();
+  if (error) throw new Error(`courses.insertCourse: ${error.message}`);
+  return courseSchema.parse(data);
+}
+
+export type NewSessionRow = {
+  course_id: string;
+  weekday: number;
+  starts_at: string;
+  ends_at: string;
+  room: string | null;
+  is_lab: boolean;
+  period_id: string | null;
+};
+
+export async function insertSession(
+  db: SupabaseClient,
+  row: NewSessionRow
+): Promise<Session> {
+  const { data, error } = await db.from('sessions').insert(row).select('*').single();
+  if (error) throw new Error(`courses.insertSession: ${error.message}`);
+  return sessionSchema.parse(data);
+}
+
+export async function updateSessionRow(
+  db: SupabaseClient,
+  id: string,
+  patch: Partial<NewSessionRow>
+): Promise<Session> {
+  const { data, error } = await db
+    .from('sessions')
+    .update(patch)
+    .eq('id', id)
+    .select('*')
+    .single();
+  if (error) throw new Error(`courses.updateSessionRow: ${error.message}`);
+  return sessionSchema.parse(data);
+}
+
+/**
+ * Drop one weekly pattern row.
+ *
+ * `class_meetings.session_id` is `on delete set null`, so every dated lecture
+ * this pattern produced survives as an orphan. Deciding which of them should
+ * actually go is a judgement about notes and files, and it is made in
+ * modules/timetable before this is ever called.
+ */
+export async function deleteSession(db: SupabaseClient, id: string): Promise<void> {
+  const { error } = await db.from('sessions').delete().eq('id', id);
+  if (error) throw new Error(`courses.deleteSession: ${error.message}`);
+}
+
+/** Remove these exact lectures. The caller has already decided each one may go. */
+export async function deleteMeetings(
+  db: SupabaseClient,
+  ids: string[]
+): Promise<number> {
+  if (ids.length === 0) return 0;
+  const { error } = await db.from('class_meetings').delete().in('id', ids);
+  if (error) throw new Error(`courses.deleteMeetings: ${error.message}`);
+  return ids.length;
+}
+
 export async function listSyllabusUnits(
   db: SupabaseClient,
   courseId: string
@@ -162,6 +251,20 @@ export async function listMeetingsForSessions(
     .lt('starts_at', endsAt)
     .order('starts_at', { ascending: true });
   if (error) throw new Error(`courses.listMeetingsForSessions: ${error.message}`);
+  return (data ?? []).map((row) => classMeetingSchema.parse(row));
+}
+
+/** Every lecture ever generated from one weekly pattern, earliest first. */
+export async function listMeetingsForSession(
+  db: SupabaseClient,
+  sessionId: string
+): Promise<ClassMeeting[]> {
+  const { data, error } = await db
+    .from('class_meetings')
+    .select('*')
+    .eq('session_id', sessionId)
+    .order('starts_at', { ascending: true });
+  if (error) throw new Error(`courses.listMeetingsForSession: ${error.message}`);
   return (data ?? []).map((row) => classMeetingSchema.parse(row));
 }
 

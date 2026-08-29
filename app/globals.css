@@ -95,6 +95,18 @@
   --strip-selected-size: 34px;
   --strip-dot-size: 4px;
 
+  /* The period grid — slice 16, the first screen drawn as periods rather than
+     clock hours. docs/DESIGN.md gives no numbers for it, so these four were
+     chosen from the ones it does give: the row is the 44px tap target plus room
+     for a code over a room (the class-block text order), the label column is
+     the 56px time gutter widened to hold "07:30 – 08:20" in mono without
+     wrapping, and the column floor is what keeps a five-day grid scrollable
+     inside its own container on a 390px phone instead of pushing the page
+     sideways. */
+  --timetable-row-height: 64px;
+  --timetable-label-width: 92px;
+  --timetable-column-min: 116px;
+
   /* Tasks — slice 06. docs/DESIGN.md gives no number for a checkbox, so this
      is the one measurement here that was chosen rather than quoted: 18px is
      the largest circle that sits on the baseline of 14px text without pushing
