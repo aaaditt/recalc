@@ -95,6 +95,12 @@ export default async function TimetablePage({
               Calendar
             </Link>
             <Link
+              href="/timetable/periods"
+              className="text-13 text-muted underline-offset-4 hover:text-ink hover:underline"
+            >
+              Periods
+            </Link>
+            <Link
               href="/courses"
               className="text-13 text-muted underline-offset-4 hover:text-ink hover:underline"
             >
@@ -161,11 +167,15 @@ export default async function TimetablePage({
 
       <p className="mt-3 text-12 text-muted">
         Free periods are blank. A filled cell opens for editing; removing one keeps every
-        lecture you have written a note on.{' '}
+        lecture you have written a note on. The row headings and their times are on{' '}
+        <Link href="/timetable/periods" className="underline underline-offset-4">
+          Periods
+        </Link>
+        , and{' '}
         <Link href="/settings/semester" className="underline underline-offset-4">
-          Regenerate the whole term
+          regenerating the whole term
         </Link>{' '}
-        if you have changed several at once.
+        is there if you have changed several at once.
       </p>
     </div>
   );

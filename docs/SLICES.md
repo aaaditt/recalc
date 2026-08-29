@@ -22,6 +22,7 @@ column as you go — this is how a fresh session knows where we are.
 | 14 | Email connect — Gmail OAuth, incremental sync | done |
 | 15 | Email extraction — proposals queue | done |
 | 16 | **Timetable** — the period grid, click a cell to add or edit a class | done |
+| 17 | **Semester setup** — first-run steps, course settings, syllabus editing, period editor | done |
 
 ## Why this order
 
@@ -116,6 +117,29 @@ gate, the quote check and the fingerprint are proved again without a database in
 `modules/proposals/extraction-safety.test.ts` (11 tests). `/inbox` is reached
 from **Settings → Email → Inbox**: the nav is six columns and full.
 
+Slice 17 needs nothing at all — no key, no Google account, no one-off setup.
+It finishes what 16 started: **a whole semester can now be set up and run from
+inside the app**, and `docs/SEEDING.md` describes that flow rather than a trip
+to the Supabase table editor. Signed in with an empty database, `/today` shows
+three steps (term dates → courses → timetable) which tick themselves off and
+vanish once there is a course and a term. `/courses` adds and lists courses;
+`/courses/<id>/settings` edits a course's code, name, colour, instructor,
+credits and term, and is the only place a course can be deleted;
+`/courses/<id>` gained a remove button per syllabus unit; `/timetable/periods`
+edits the nine seeded rows, adds the spare `+1` from `last_sem.jpeg`, and
+removes a row.
+
+The dangerous part of the slice is the period editor, and the whole of it is
+proved against the real database in `modules/timetable/period-edits.test.ts`
+(8 tests). **Editing a period moves no lecture that already exists** — same
+ids, same instants, note still attached — because `sessions.starts_at` is
+authoritative and the period's times were copied into the session at add-time
+(slice 16's decision, deliberately kept). A class added *after* the edit gets
+the new times. Moving the classes already on a row is a second, explicit press
+which even then only moves future untouched lectures. And deleting a course is
+refused while any note, file, task or hand-edited lecture belongs to it, because
+`courses` cascades to `class_meetings` and a lecture is what a note hangs off.
+
 ## If you run out of steam
 
 Slices 00–09 give you a genuinely good semester planner. Slices 11 and 12 are the
@@ -124,7 +148,7 @@ entirely.
 
 ## What to build next
 
-The fifteen planned slices are done. This list is not a wishlist — every item is
+The seventeen planned slices are done. This list is not a wishlist — every item is
 something the build actually ran into, and every one of them is already written
 down under "Noticed, not fixed" in `docs/DECISIONS.md`. In order.
 

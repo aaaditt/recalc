@@ -1,7 +1,10 @@
 import Link from 'next/link';
 
-import { Card } from '@/components/ui/card';
+import { addCourseAction } from './actions';
+import { Button } from '@/components/ui/button';
+import { Card, CardDivider } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
+import { Field, Input } from '@/components/ui/field';
 import { PageHeader } from '@/components/ui/page-header';
 import { colourForCourse, courseDot } from '@/lib/course-colours';
 import { createClient } from '@/lib/supabase/server';
@@ -87,7 +90,7 @@ export default async function CoursesPage() {
         {rows.length === 0 ? (
           <EmptyState
             title="No courses yet"
-            description="Courses arrive with your timetable — click a cell there and name the course."
+            description="Add one here, or click a cell on the timetable and name the course as you place it."
             action={
               <Link
                 href="/timetable"
@@ -100,10 +103,10 @@ export default async function CoursesPage() {
         ) : (
           <ul className="divide-y divide-line">
             {rows.map(({ course, colour, progress }) => (
-              <li key={course.id}>
+              <li key={course.id} className="flex items-center gap-3 px-4 py-3">
                 <Link
                   href={`/courses/${course.id}`}
-                  className="flex items-center gap-3 px-4 py-3 transition-colors duration-100 hover:bg-sunken"
+                  className="flex min-w-0 flex-1 items-center gap-3"
                 >
                   <span style={courseDot(colour)} />
                   <span className="shrink-0 font-mono text-12 font-medium">
@@ -112,15 +115,65 @@ export default async function CoursesPage() {
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-14">{course.name}</span>
                     <span className="block truncate text-12 text-muted">
+                      {course.instructor ? `${course.instructor} · ` : ''}
                       {progressLabel(progress)}
                     </span>
                   </span>
+                </Link>
+
+                <Link
+                  href={`/courses/${course.id}/settings`}
+                  className="shrink-0 text-12 text-muted underline underline-offset-4 hover:text-ink"
+                >
+                  Settings
                 </Link>
               </li>
             ))}
           </ul>
         )}
+
+        <CardDivider />
+
+        {/* A course with no weekly class at all — a project, a reading course —
+            still needs a syllabus and somewhere for its notes to hang, so it
+            has to be possible to make one without inventing a grid cell. */}
+        <form
+          action={addCourseAction}
+          className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-end"
+        >
+          <Field label="Code" className="sm:w-28 sm:shrink-0">
+            <Input
+              name="code"
+              required
+              maxLength={20}
+              placeholder="CS201"
+              autoComplete="off"
+              className="font-mono"
+            />
+          </Field>
+          <Field label="Name" className="flex-1">
+            <Input
+              name="name"
+              required
+              maxLength={120}
+              placeholder="Data Structures & Algorithms"
+              autoComplete="off"
+            />
+          </Field>
+          <Button type="submit" variant="primary">
+            Add course
+          </Button>
+        </form>
       </Card>
+
+      <p className="pt-3 text-12 text-muted">
+        A new course lands on its settings screen, where its colour, instructor and
+        credits are. Its weekly classes are added on{' '}
+        <Link href="/timetable" className="underline underline-offset-4">
+          the timetable
+        </Link>
+        .
+      </p>
     </>
   );
 }

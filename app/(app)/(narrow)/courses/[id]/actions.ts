@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/server';
 import {
   createSyllabusUnit,
   moveSyllabusUnit,
+  removeSyllabusUnit,
   renameSyllabusUnit,
   setSyllabusUnitStatus,
   type SyllabusUnitStatus,
@@ -69,8 +70,11 @@ export async function renameUnitAction(
 }
 
 /**
- * One plain `<form>` per row with three submit buttons: the status chip and
- * the two arrows. No JavaScript is involved in any of them.
+ * One plain `<form>` per row with four submit buttons: the status chip, the two
+ * arrows and remove. No JavaScript is involved in any of them.
+ *
+ * Only the clicked button's name and value are posted, so a move, a status
+ * change and a deletion can never be confused with one another.
  */
 export async function unitRowAction(courseId: string, formData: FormData): Promise<void> {
   const { supabase, workspaceId } = await signedIn();
@@ -80,6 +84,11 @@ export async function unitRowAction(courseId: string, formData: FormData): Promi
 
   if (move === 'up' || move === 'down') {
     await moveSyllabusUnit(supabase, workspaceId, unitId, move as UnitMove);
+  } else if (formData.get('remove') !== null) {
+    // Safe to be destructive about: every foreign key pointing at a unit is
+    // `on delete set null`, so a lecture that covered it keeps its note and a
+    // task set on it keeps its title. What goes is the filing, not the writing.
+    await removeSyllabusUnit(supabase, workspaceId, unitId);
   } else {
     // The next status along is computed in the browser by lib/syllabus's
     // `nextUnitStatus` and posted, so the button's label and what it does can

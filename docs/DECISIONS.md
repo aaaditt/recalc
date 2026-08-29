@@ -2073,6 +2073,131 @@ were asked for and nothing else.
 Instead of: editing it now and leaving a document that half-describes a screen
 that does not exist yet.
 
+## 2026-08-29 - Editing a period changes the row heading and nothing dated
+Because: slice 16 wrote the period's times *into* the session so that this edit
+could be made safely, and this is the slice that makes the edit. A period is the
+row a class is drawn on; `sessions.starts_at` is when the class meets and
+`class_meetings.starts_at` is when a lecture happened. Correcting "3rd period"
+from 09:20 to 09:00 in October must not silently restate what time October's
+lectures took place at - the notes and files hanging off them would then be filed
+against times that never existed, and there is no undo for that.
+Instead of: a join from the grid to the period (tidier, and the exact shape of
+the bug this project exists to avoid), or a cascade on save (the same bug, made
+deliberate).
+
+## 2026-08-29 - Moving the classes on a period is a second, explicit press
+Because: option (a) alone - "it only affects classes added afterwards" - leaves a
+row heading that disagrees with the classes drawn on it and no way to fix it
+except retyping each class. So `getPeriodUsage` counts the classes on each row
+whose own times no longer match it, the screen says "3 still on the old time",
+and `applyPeriodToClasses` is a button beside that sentence. It rewrites those
+weekly slots and then calls the one generator, which is additive: only this
+term's *remaining* lectures move, and never one carrying a note, a topic, a unit,
+a file, a task or a cancellation. Even the explicit path cannot rewrite history.
+Instead of: doing it automatically on save (which is the cascade above wearing a
+hat), or not offering it at all (which makes the period editor a labelling tool
+and leaves the 50-vs-40-minute correction impossible to actually apply).
+
+## 2026-08-29 - Deleting a course is refused while anything is written against it
+Because: `courses` cascades to `sessions`, `syllabus_units` and `class_meetings`,
+and a lecture is the row a note hangs off. Deleting a course you have used would
+leave the note's `blocks` rows alive but unreachable, which is losing them with
+extra steps. So `removeCourse` counts first - notes (lecture and free-standing),
+hand-edited lectures, attached files, tasks - and returns those counts instead of
+deleting. **Delete is for a course typed in by mistake.** A course you have
+actually used is corrected: its code, its name, its colour.
+Instead of: soft-deleting courses (a `deleted_at` filter on every read in six
+modules, for a button pressed twice a year), or deleting and orphaning the blocks,
+which is the thing "never lose writing" exists to stop. The refusal names what is
+in the way, so it is a sentence rather than a "no".
+
+## 2026-08-29 - `removeCourse` lives in modules/timetable, like `removeClass`
+Because: "is this course safe to delete" needs notes, files and tasks, and
+`modules/notes`, `modules/files` and `modules/tasks` all import `modules/courses`.
+Asking from the newer module keeps that arrow pointing one way - the identical
+argument slice 16 made for `removeClass`. `modules/courses` gained a plain
+`deleteCourse` that checks ownership and deletes, deliberately not "delete the
+course and work out what that costs", the same shape as `removeMeetings`.
+Instead of: a cross-module cycle, or a second copy of "has this been written on"
+inside `modules/courses` that could disagree with the first.
+
+## 2026-08-29 - Removing a syllabus unit is safe, and renumbers immediately
+Because: every foreign key that points at a unit is `on delete set null`
+(migration 002) - `class_meetings.unit_id`, `tasks.unit_id`,
+`syllabus_units.block_id` - so a lecture that covered the unit keeps its note and
+a task set on it keeps its title. What is lost is the filing, not the writing, so
+this needs no refusal and no confirmation sheet. The units left are renumbered
+1..n straight away, so slice 08's property ("positions are 1..n, distinct, in
+list order") survives a deletion exactly as it survives a move.
+Instead of: refusing while a lecture names the unit (a syllabus you cannot correct
+after week one), or leaving a gap in the numbering (which makes the numbers
+decoration rather than the unit's identity).
+
+## 2026-08-29 - The first-run card is three ticked steps on /today, not a wizard
+Because: the database Aadit actually meets is empty, and every screen in this app
+renders empty perfectly well - so the setup needs a *sentence*, not a gate. Three
+steps in dependency order (term dates, then courses, then the timetable), each
+ticked from real data, on the screen he opens at 7:45am anyway. It vanishes for
+good once there is both a course and a term, which is the moment /today has
+something of its own worth reading. No accent is used: docs/DESIGN.md reserves
+that for "something needs attention", and an empty September is not an alarm.
+Instead of: a multi-step wizard at /welcome with its own routes and its own state
+machine (a framework, for a thing done once a term), or a modal - the one shape
+that can stop you using an app you have already signed in to.
+
+## 2026-08-29 - Skipping the setup card is a cookie, not a column
+Because: it is a fact about this browser's patience, not about the semester.
+Nothing else reads it, nothing needs it to survive a device change, and it does
+not deserve a migration or a row. The card disappears on its own once there is
+real data, so the cookie only matters in the window before that.
+Instead of: `workspaces.onboarded_at` (schema for a dismissal), or localStorage,
+which would make the server render the card and the client hide it - a flash of a
+card he has already dismissed.
+
+## 2026-08-29 - The colour picker is eight native radios, in a Server Component
+Because: slice 08 established that the course page's status chip and reorder
+arrows are submit buttons in a plain `<form>` and need no JavaScript at all, and
+a course's colour is the same kind of choice.
+`components/courses/colour-choice.tsx` is eight `<input type="radio">` marked
+`peer sr-only` with the dot drawn on the sibling `<span>`, so the whole settings
+screen stays server-rendered and works with JavaScript off. The dot still comes
+from `courseDot`, so no hex leaves `app/globals.css` (rule 7).
+Instead of: the `'use client'` swatch grid from the add-a-class sheet, which is
+right there but would turn a page of five text inputs into a client component
+for one control.
+
+## 2026-08-29 - /timetable/periods sits in the wide route group, beside /timetable
+Because: it is a table of nine rows each holding a label and two time inputs, and
+the reading column would wrap every row. Putting it at
+`app/(app)/timetable/periods/page.tsx` also means one segment named `timetable`
+in one route group rather than the same name in two, which is the sort of thing
+that resolves fine until it does not.
+Instead of: `/settings/periods` (the period grid is the timetable's own shape,
+not a setting), or a section on `/timetable` itself - a screen whose whole job is
+the grid, with a second grid under it.
+
+## 2026-08-29 - No migration and no dependencies in slice 17
+Because: everything this slice writes to already existed. `courses` has had
+`colour`, `instructor` and `credits` since migration 002; `syllabus_units` since
+002; `periods` and `workspaces.term_start` / `term_end` since 012. The live
+schema was checked before anything was written. Nothing was installed: the colour
+picker is native radios, the setup card is three list items, and the two lines of
+clock arithmetic that pre-fill the "add a row" form live in the page that uses
+them.
+
+## 2026-08-29 - docs/SEEDING.md now describes the app, and keeps the script
+Because: slice 16 recorded that its steps 1, 2 and 4 were superseded and left the
+file alone (rule 9); finishing it was assigned to this slice. What survives is
+everything still true: the weekday numbering, the wall-clock/instant convention
+and where the timezone is applied, and `scripts/seed-check.ts` as the fastest way
+to see what the database actually thinks - including its `--generate` flag, which
+is still the right tool after correcting several classes at once. What is gone is
+every instruction to open the Supabase table editor. Three empty states that
+pointed a tired student at a markdown file now point at a screen instead.
+Instead of: deleting the file (the conventions have nowhere else to live and the
+check script has no other documentation), or leaving it - a setup guide that
+describes a process the app has replaced is worse than none.
+
 ---
 
 ## Noticed, not fixed
@@ -2694,3 +2819,30 @@ Things spotted outside the current slice. Do not fix them mid-slice; write them 
   — and the "one needs-you surface" note in SLICES.md is really the same
   complaint. The calendar header is at four links on a phone and is the next
   thing to overflow.
+
+- The colour of a course **can** now be changed, on `/courses/<id>/settings` -
+  the second half of the slice-16 note above is fixed. The first half stands: a
+  file attached to a future lecture with no note on it still blocks that
+  lecture's deletion, deliberately.
+- `/today` makes one extra `getSessions` read while the setup card is showing,
+  and `getSessions` is itself two round trips (see the note above). It is inside
+  the `if`, so it stops entirely once the semester is set up - but it is the
+  third place in this file to observe that `modules/courses` has no "sessions for
+  this workspace" query that is one statement.
+- `removeCourse` reads every note and every task in the workspace to count the
+  ones belonging to one course. At one student's scale that is a few hundred rows
+  and it happens on a button pressed twice a year; it is still the wrong shape,
+  and the fix is a `courseId` filter on `listNotes` and `getTasks`.
+- Nothing stops two periods overlapping, or a period being edited to start before
+  the one above it. The grid draws rows in `position` order regardless, so the
+  result is a timetable that reads oddly rather than one that is wrong - but
+  there is no warning, and "9th: 07:30" is a typo the screen will accept in
+  silence.
+- `applyPeriodToClasses` moves a class's times but never its room, and there is
+  still no way to set a lecture's room from anywhere except the pattern - the
+  same gap slice 15 recorded when an accepted room-change proposal could only be
+  marked `moved`.
+- The screens behind a link rather than a nav destination are now five: `/inbox`,
+  `/settings/*`, `/timetable`, `/timetable/periods` and
+  `/courses/<id>/settings`. Slice 16 called this the same complaint as the "one
+  needs-you surface" item in SLICES.md, and it is one screen worse this week.

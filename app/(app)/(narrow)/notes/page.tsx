@@ -142,7 +142,7 @@ export default async function NotesPage() {
           {courses.length === 0 ? (
             <EmptyState
               title="No courses yet"
-              description="A note belongs to a course. Add your courses first — docs/SEEDING.md has the steps."
+              description="A note belongs to a course. Add your courses first, on /courses or by clicking a cell on the timetable."
             />
           ) : (
             <form

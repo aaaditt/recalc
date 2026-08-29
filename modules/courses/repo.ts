@@ -79,6 +79,44 @@ export async function insertCourse(
   return courseSchema.parse(data);
 }
 
+/** Everything about a course row that the settings screen can change. */
+export type CourseRowPatch = {
+  code?: string;
+  name?: string;
+  term?: string;
+  colour?: string | null;
+  instructor?: string | null;
+  credits?: number | null;
+};
+
+export async function updateCourseRow(
+  db: SupabaseClient,
+  id: string,
+  patch: CourseRowPatch
+): Promise<Course> {
+  const { data, error } = await db
+    .from('courses')
+    .update(patch)
+    .eq('id', id)
+    .select('*')
+    .single();
+  if (error) throw new Error(`courses.updateCourseRow: ${error.message}`);
+  return courseSchema.parse(data);
+}
+
+/**
+ * Delete one course row.
+ *
+ * Postgres cascades this to its sessions, its syllabus units and its dated
+ * lectures. Whether that is safe is a judgement about notes, files and tasks,
+ * and it is made in modules/timetable *before* this is ever called — exactly
+ * as it is for `deleteMeetings`. Nothing here asks the question.
+ */
+export async function deleteCourseRow(db: SupabaseClient, id: string): Promise<void> {
+  const { error } = await db.from('courses').delete().eq('id', id);
+  if (error) throw new Error(`courses.deleteCourseRow: ${error.message}`);
+}
+
 export type NewSessionRow = {
   course_id: string;
   weekday: number;
@@ -200,6 +238,34 @@ export async function updateSyllabusUnit(
     .single();
   if (error) throw new Error(`courses.updateSyllabusUnit: ${error.message}`);
   return syllabusUnitSchema.parse(data);
+}
+
+/**
+ * Remove one syllabus unit.
+ *
+ * `class_meetings.unit_id`, `tasks.unit_id` and `syllabus_units.block_id` are
+ * all `on delete set null` (migration 002), so a lecture that covered this unit
+ * keeps its note and a task set on it keeps its title. Only the filing is lost.
+ */
+export async function deleteSyllabusUnit(db: SupabaseClient, id: string): Promise<void> {
+  const { error } = await db.from('syllabus_units').delete().eq('id', id);
+  if (error) throw new Error(`courses.deleteSyllabusUnit: ${error.message}`);
+}
+
+/** Every dated lecture this course has ever had, earliest first. */
+export async function listMeetingsForCourse(
+  db: SupabaseClient,
+  workspaceId: string,
+  courseId: string
+): Promise<ClassMeeting[]> {
+  const { data, error } = await db
+    .from('class_meetings')
+    .select('*')
+    .eq('workspace_id', workspaceId)
+    .eq('course_id', courseId)
+    .order('starts_at', { ascending: true });
+  if (error) throw new Error(`courses.listMeetingsForCourse: ${error.message}`);
+  return (data ?? []).map((row) => classMeetingSchema.parse(row));
 }
 
 /** Every lecture that has a note document, most recent lecture first. */

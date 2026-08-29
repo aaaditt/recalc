@@ -40,6 +40,49 @@ export type NewPeriodRow = {
   ends_at: string;
 };
 
+export async function insertPeriod(
+  db: SupabaseClient,
+  row: NewPeriodRow
+): Promise<Period> {
+  const { data, error } = await db.from('periods').insert(row).select('*').single();
+  if (error) throw new Error(`timetable.insertPeriod: ${error.message}`);
+  return periodSchema.parse(data);
+}
+
+/**
+ * Change one row of the printed grid.
+ *
+ * `.eq('id', ...)` and nothing else. No session and no dated lecture is in this
+ * statement, which is exactly what makes "editing a period never moves a
+ * lecture" true rather than merely intended.
+ */
+export async function updatePeriodRow(
+  db: SupabaseClient,
+  id: string,
+  patch: { label?: string; starts_at?: string; ends_at?: string; position?: number }
+): Promise<Period> {
+  const { data, error } = await db
+    .from('periods')
+    .update(patch)
+    .eq('id', id)
+    .select('*')
+    .single();
+  if (error) throw new Error(`timetable.updatePeriodRow: ${error.message}`);
+  return periodSchema.parse(data);
+}
+
+/**
+ * Drop one row of the grid.
+ *
+ * `sessions.period_id` is `on delete set null` (migration 012), so every class
+ * filed under it survives with its own times intact — it simply stops having a
+ * row to be drawn on. Nothing dated is touched at all.
+ */
+export async function deletePeriod(db: SupabaseClient, id: string): Promise<void> {
+  const { error } = await db.from('periods').delete().eq('id', id);
+  if (error) throw new Error(`timetable.deletePeriod: ${error.message}`);
+}
+
 /**
  * Seed periods, skipping any position that already exists.
  *

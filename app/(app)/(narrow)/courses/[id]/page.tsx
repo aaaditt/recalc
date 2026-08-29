@@ -247,6 +247,12 @@ export default async function CoursePage({
           <span style={courseDot(colour)} />
           <span className="font-mono text-12 font-medium">{course.code}</span>
           <Pill>{course.term}</Pill>
+          <Link
+            href={`/courses/${course.id}/settings`}
+            className="ml-auto text-12 text-muted underline-offset-4 hover:text-ink hover:underline"
+          >
+            Settings
+          </Link>
         </div>
 
         <h1 className="pt-1 text-26 font-semibold tracking-tight">{course.name}</h1>
@@ -385,6 +391,20 @@ export default async function CoursePage({
                           className={arrow}
                         >
                           ↓
+                        </button>
+
+                        {/* Removing a unit loses the filing, never the writing:
+                            a lecture that covered it keeps its note and a task
+                            set on it keeps its title. */}
+                        <button
+                          type="submit"
+                          name="remove"
+                          value="1"
+                          aria-label={`Remove ${unit.title}`}
+                          title={`Remove ${unit.title}`}
+                          className={arrow}
+                        >
+                          ×
                         </button>
                       </form>
                     </div>

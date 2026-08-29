@@ -1,6 +1,9 @@
+import { cookies } from 'next/headers';
 import type { ReactNode } from 'react';
 
+import { skipFirstRunAction } from './actions';
 import { toggleTaskDoneAction } from '../tasks/actions';
+import { FirstRun } from '@/components/onboarding/first-run';
 import { ClassRow } from '@/components/today/class-row';
 import { SetUpAgentsStrip } from '@/components/today/setup-agents';
 import { StudyStrip } from '@/components/today/study-strip';
@@ -9,6 +12,7 @@ import { Card, CardDivider } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageHeader } from '@/components/ui/page-header';
 import { colourForCourse, type CourseColour } from '@/lib/course-colours';
+import { FIRST_RUN_COOKIE } from '@/lib/first-run';
 import { formatMinutes } from '@/lib/study';
 import { createClient } from '@/lib/supabase/server';
 import {
@@ -27,7 +31,7 @@ import {
   groupTasksByDay,
 } from '@/lib/today';
 import { hasAgentRole } from '@/modules/agents';
-import { getCourses, getMeetingsOnDate } from '@/modules/courses';
+import { getCourses, getMeetingsOnDate, getSessions } from '@/modules/courses';
 import { getMinutesOnDate, getMinutesThisWeek } from '@/modules/study';
 import { getOverdueTasks, getTasksDueBetween, type Task } from '@/modules/tasks';
 import { ensureWorkspace } from '@/modules/workspaces';
@@ -145,6 +149,20 @@ export default async function TodayPage() {
       hasAgentRole(supabase, user.id, 'fast'),
     ]);
 
+  // The first thing Aadit meets is an empty database, and this is the only
+  // screen that says so. Three steps, ticked off real data, and gone for good
+  // the moment there is both a course and a term — which is the point at which
+  // there is something on this page worth reading instead. Not a wizard:
+  // nothing here blocks the app, and /today renders perfectly well underneath.
+  //
+  // The extra read is inside the `if`, so it is made only while the card is
+  // actually being drawn — never once the semester is set up.
+  const termSet = Boolean(workspace.term_start && workspace.term_end);
+  const settingUp =
+    (await cookies()).get(FIRST_RUN_COOKIE)?.value !== '1' &&
+    (courses.length === 0 || !termSet);
+  const sessions = settingUp ? await getSessions(supabase, workspace.id) : [];
+
   // A task due at 08:00 on a morning it is now 10:00 is in both lists.
   const seen = new Set<string>();
   const allTasks = [...overdueTasks, ...dueTasks].filter((task) => {
@@ -179,6 +197,17 @@ export default async function TodayPage() {
     <>
       <PageHeader title="Today" subtitle={formatDate(today)} />
 
+      {settingUp ? (
+        <div className="pt-2">
+          <FirstRun
+            termSet={termSet}
+            hasCourses={courses.length > 0}
+            hasClasses={sessions.length > 0}
+            dismiss={skipFirstRunAction}
+          />
+        </div>
+      ) : null}
+
       {/* Minutes studied, and the way in to /focus. Two numbers, no chart —
           prompts/07-focus.md: "do not build a stats dashboard". */}
       <div className="pt-2">
@@ -204,7 +233,7 @@ export default async function TodayPage() {
             {courses.length === 0 ? (
               <EmptyState
                 title="No timetable yet"
-                description="Add your courses and their weekly sessions, then generate this term's lectures. docs/SEEDING.md has the steps."
+                description="Fill in your timetable and this term's lectures come with it."
               />
             ) : (
               <EmptyState

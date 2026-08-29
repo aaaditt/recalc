@@ -37,6 +37,80 @@ export const DEFAULT_PERIODS: { position: number; label: string; startsAt: strin
     { position: 9, label: '9th', startsAt: '14:50', endsAt: '15:40' },
   ];
 
+// ---------------------------------------------------------------------------
+// Editing the grid itself — slice 17
+// ---------------------------------------------------------------------------
+
+/** A wall-clock time of day. What is written in the Timings column on paper. */
+export const periodTimeSchema = z
+  .string()
+  .trim()
+  .regex(/^\d{2}:\d{2}(:\d{2})?$/, 'expected HH:MM');
+
+/** What the paper calls the row: '1st', '9th', '+1'. Short, because it is a heading. */
+export const periodLabelSchema = z
+  .string()
+  .trim()
+  .min(1, 'a period needs a label')
+  .max(12, 'that is a name, not a row heading');
+
+export const addPeriodInputSchema = z.object({
+  workspaceId: z.uuid(),
+  label: periodLabelSchema,
+  startsAt: periodTimeSchema,
+  endsAt: periodTimeSchema,
+});
+
+/** Correcting a row's times or its label. Nothing else about a period exists. */
+export const updatePeriodInputSchema = z.object({
+  workspaceId: z.uuid(),
+  periodId: z.uuid(),
+  label: periodLabelSchema.optional(),
+  startsAt: periodTimeSchema.optional(),
+  endsAt: periodTimeSchema.optional(),
+});
+
+export type AddPeriodInput = z.input<typeof addPeriodInputSchema>;
+export type UpdatePeriodInput = z.input<typeof updatePeriodInputSchema>;
+
+/**
+ * How much of the grid one period row is actually carrying.
+ *
+ * `outOfStep` is the number that earns this type: classes still filed under
+ * this row whose own times no longer match it, because the row was edited
+ * afterwards. That is not a bug — see the module doc — but it is a thing to be
+ * told about, and the number the "apply to these classes" button is drawn from.
+ */
+export type PeriodUsage = {
+  periodId: string;
+  classes: number;
+  outOfStep: number;
+};
+
+/** What an explicit "apply this row's times to its classes" run actually did. */
+export type ApplyPeriodResult = {
+  /** Weekly slots whose times were rewritten. */
+  classes: number;
+  /** Null when term dates are not set, so no dated lecture could be made. */
+  generated: { created: number; updated: number; unchanged: number } | null;
+};
+
+/**
+ * What happened when a course was asked to be deleted.
+ *
+ * `removed: false` is the ordinary answer for any course that has been used:
+ * deleting a course cascades to its lectures, and a lecture is what a note
+ * hangs off. The counts are the refusal's reason, so the screen can say what is
+ * in the way rather than "no".
+ */
+export type RemoveCourseResult = {
+  removed: boolean;
+  notes: number;
+  lecturesWithWork: number;
+  files: number;
+  tasks: number;
+};
+
 /**
  * Adding a class from a grid cell.
  *

@@ -12,6 +12,7 @@ import {
 import * as repo from './repo';
 import {
   createCourseInputSchema,
+  updateCourseInputSchema,
   createOneOffMeetingInputSchema,
   createSessionInputSchema,
   createSyllabusUnitInputSchema,
@@ -28,6 +29,7 @@ import {
   type CreateOneOffMeetingInput,
   type CreateSessionInput,
   type CreateSyllabusUnitInput,
+  type UpdateCourseInput,
   type UpdateSessionInput,
   type GenerateMeetingsInput,
   type GenerateMeetingsResult,
@@ -124,6 +126,77 @@ export async function createCourse(
     term: parsed.term,
     colour: parsed.colour ?? null,
   });
+}
+
+/**
+ * Everything about a course that can be corrected afterwards — slice 17.
+ *
+ * Slice 16 could only create a course inline from a grid cell, with a code, a
+ * name and a colour. The instructor, the credits and the term had nowhere to be
+ * typed except the Supabase table editor. This is that screen's write.
+ *
+ * The course is read first and proved to be this workspace's, so a forged id
+ * cannot recolour someone else's course — the same shape every write in this
+ * module has used since slice 06.
+ */
+export async function updateCourse(
+  db: SupabaseClient,
+  workspaceId: string,
+  id: string,
+  input: UpdateCourseInput
+): Promise<Course> {
+  const parsed = updateCourseInputSchema.parse(input);
+  await ownedCourse(db, workspaceId, id);
+
+  return repo.updateCourseRow(db, id, {
+    ...(parsed.code === undefined ? {} : { code: parsed.code }),
+    ...(parsed.name === undefined ? {} : { name: parsed.name }),
+    ...(parsed.term === undefined ? {} : { term: parsed.term }),
+    ...(parsed.colour === undefined ? {} : { colour: parsed.colour }),
+    ...(parsed.instructor === undefined
+      ? {}
+      : { instructor: parsed.instructor?.trim() ? parsed.instructor.trim() : null }),
+    ...(parsed.credits === undefined ? {} : { credits: parsed.credits }),
+  });
+}
+
+/**
+ * Delete one course, having already been told it is safe.
+ *
+ * Postgres cascades this to the course's sessions, syllabus units and dated
+ * lectures. Deciding whether any of those carry work — a note, a file, a task —
+ * needs modules/files and modules/notes, both of which import *this* module, so
+ * the judgement is made in modules/timetable and this is deliberately not
+ * "delete the course and work out what that costs". Same shape as
+ * `removeMeetings` above, for the same reason.
+ */
+export async function deleteCourse(
+  db: SupabaseClient,
+  workspaceId: string,
+  id: string
+): Promise<void> {
+  await ownedCourse(db, workspaceId, id);
+  await repo.deleteCourseRow(db, id);
+}
+
+/** Every dated lecture this course has ever had, earliest first. */
+export async function getMeetingsForCourse(
+  db: SupabaseClient,
+  workspaceId: string,
+  courseId: string
+): Promise<ClassMeeting[]> {
+  await ownedCourse(db, workspaceId, courseId);
+  return repo.listMeetingsForCourse(db, workspaceId, courseId);
+}
+
+/** Every weekly slot filed under one period row of the printed grid. */
+export async function getSessionsForPeriod(
+  db: SupabaseClient,
+  workspaceId: string,
+  periodId: string
+): Promise<Session[]> {
+  const sessions = await getSessions(db, workspaceId);
+  return sessions.filter((session) => session.period_id === periodId);
 }
 
 /**
@@ -450,6 +523,36 @@ export async function moveSyllabusUnit(
 
   [order[from], order[to]] = [order[to], order[from]];
   return reorderSyllabusUnits(db, workspaceId, unit.course_id, order);
+}
+
+/**
+ * Take a unit off the syllabus — slice 17.
+ *
+ * This is the one destructive thing on the course page, and it is safe to be
+ * destructive about: `class_meetings.unit_id`, `tasks.unit_id` and
+ * `syllabus_units.block_id` are all `on delete set null`, so a lecture that
+ * covered the unit keeps its note and a task set on it keeps its title. What is
+ * lost is the filing, not the writing.
+ *
+ * The remaining units are renumbered 1..n straight away, so "positions are
+ * 1..n, distinct, in list order" survives a deletion exactly as it survives a
+ * move.
+ */
+export async function removeSyllabusUnit(
+  db: SupabaseClient,
+  workspaceId: string,
+  id: string
+): Promise<SyllabusUnit[]> {
+  const unit = await ownedUnit(db, workspaceId, id);
+  await repo.deleteSyllabusUnit(db, id);
+
+  const left = await repo.listSyllabusUnits(db, unit.course_id);
+  return reorderSyllabusUnits(
+    db,
+    workspaceId,
+    unit.course_id,
+    left.map((row) => row.id)
+  );
 }
 
 // ---------------------------------------------------------------------------

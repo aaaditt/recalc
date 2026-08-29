@@ -64,6 +64,24 @@ export const createCourseInputSchema = z.object({
   colour: z.string().trim().min(1).max(20).nullable().optional(),
 });
 
+/**
+ * Everything about a course that is editable after it exists — slice 17.
+ *
+ * Every field is optional: the settings form posts the whole course back, but a
+ * caller that only wants to recolour one may send only the colour. `credits` is
+ * a number or null rather than a coerced string, because an empty box means
+ * "not recorded" and `Number('')` is 0, which is a different claim.
+ */
+export const updateCourseInputSchema = z.object({
+  code: courseCodeSchema.optional(),
+  name: courseNameSchema.optional(),
+  term: z.string().trim().min(1).max(60).optional(),
+  // A course-colour token name from lib/course-colours, never a hex value.
+  colour: z.string().trim().min(1).max(20).nullable().optional(),
+  instructor: z.string().trim().max(120).nullable().optional(),
+  credits: z.number().min(0).max(30).nullable().optional(),
+});
+
 /** One weekly slot: this course, this weekday, between these two times. */
 export const createSessionInputSchema = z.object({
   workspaceId: z.uuid(),
@@ -179,6 +197,7 @@ export const rescheduleMeetingInputSchema = z.object({
 export type Course = z.infer<typeof courseSchema>;
 export type Session = z.infer<typeof sessionSchema>;
 export type CreateCourseInput = z.input<typeof createCourseInputSchema>;
+export type UpdateCourseInput = z.input<typeof updateCourseInputSchema>;
 export type CreateSessionInput = z.input<typeof createSessionInputSchema>;
 export type UpdateSessionInput = z.input<typeof updateSessionInputSchema>;
 export type SyllabusUnit = z.infer<typeof syllabusUnitSchema>;

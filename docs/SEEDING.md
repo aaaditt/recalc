@@ -1,24 +1,22 @@
-# Seeding the semester by hand
+# Setting up a semester
 
-Slice 01 has no UI. You type the timetable straight into the Supabase table
-editor, then run one script to check it. Twenty minutes, once a term.
+Twenty minutes, once a term, and **all of it happens inside the app**. There is
+no longer any reason to open the Supabase table editor.
 
-**Supabase dashboard → Table Editor → pick the table → Insert → Insert row.**
+Slice 16 built `/timetable`; slice 17 built the screens around it. What follows
+is the order to do it in — the same order the setup card on `/today` walks you
+through, because that card is this page with fewer words.
 
-Fill the tables **in this order**. Each one references the one above it, and the
-editor's dropdowns only offer rows that already exist.
-
-1. `courses`
-2. `sessions` — the weekly pattern
-3. `syllabus_units` — optional now, needed by slice 08
-4. `class_meetings` — **do not type these.** Generate them (step 5 below).
-5. `tasks` — optional now, needed by slice 06
-
-Leave every `id`, `created_at` and `updated_at` alone. The database fills them.
+> If you are reading this because something is already wrong, skip to
+> [Check it](#6-check-it) at the bottom. `scripts/seed-check.ts` still exists
+> and is still the fastest way to see what the database actually thinks.
 
 ---
 
 ## The two conventions to get right
+
+Nothing types these by hand any more, but every screen below is built on them
+and a bug in either is invisible until November.
 
 **Weekday numbers.** `sessions.weekday` is a single digit:
 
@@ -26,193 +24,214 @@ Leave every `id`, `created_at` and `updated_at` alone. The database fills them.
 |---|---|---|---|---|---|---|
 | Sun | Mon | Tue | Wed | Thu | Fri | Sat |
 
-**Times.** `sessions.starts_at` / `ends_at` are wall-clock times of day, typed as
-`HH:MM` on a 24-hour clock. `09:00`, `14:30`, `17:00`. No date, no timezone, no
-am/pm. They mean what a printed timetable means: nine in the morning, where you
-are. The timezone is applied once, when meetings are generated.
+**Times.** `periods.starts_at` and `sessions.starts_at` are wall-clock times of
+day: `09:00`, `14:30`, `17:00`. No date, no timezone, no am/pm. They mean what a
+printed timetable means — nine in the morning, where you are.
 
-Dates (`valid_from`, `valid_until`) are `YYYY-MM-DD`: `2026-09-01`.
+The timezone is applied **exactly once**, when dated lectures are generated, and
+it is `Asia/Dubai` for this term. On Vercel that comes from the `TZ` environment
+variable; locally it is whatever the laptop is set to. Everything that crosses
+the wall-clock/instant boundary takes the zone as an explicit argument — see
+`lib/time.ts` and the decisions on it in `docs/DECISIONS.md`.
 
----
-
-## 1. `courses`
-
-One row per subject, per term.
-
-| Column | Fill in? | Notes |
-|---|---|---|
-| `workspace_id` | **yes** | Pick your workspace from the dropdown. There is only one. |
-| `code` | **yes** | The subject code, e.g. `ME301`. This is what shows on the calendar. |
-| `name` | **yes** | Full title, e.g. `Thermodynamics I`. |
-| `term` | **yes** | Free text, but be consistent: `Fall 2026` everywhere. |
-| `colour` | optional | Leave empty for now. Slice 02 defines the colour token names. |
-| `instructor` | optional | |
-| `credits` | optional | A number. Halves are fine: `1.5`. |
-
-`code` must be unique within a term — the database will refuse a second `ME301`
-in `Fall 2026`, which is deliberate.
-
-**Worked example**
-
-```
-workspace_id : <your workspace>
-code         : ME301
-name         : Thermodynamics I
-term         : Fall 2026
-colour       : (empty)
-instructor   : Dr R. Menon
-credits      : 3
-```
+Dates (`term_start`, `term_end`, `valid_from`, `valid_until`) are `YYYY-MM-DD`.
 
 ---
 
-## 2. `sessions` — the weekly pattern
+## 1. Sign in. The setup card does the rest
 
-**One row per class slot per week.** A course that meets twice a week at
-different times gets **two rows**. This is the normal case, not an edge case.
+Signed in with an empty database, `/today` shows one card with three steps, each
+ticked off real data as it appears:
 
-| Column | Fill in? | Notes |
-|---|---|---|
-| `course_id` | **yes** | Dropdown. |
-| `weekday` | **yes** | `0`–`6` per the table above. |
-| `starts_at` | **yes** | `HH:MM`, 24-hour. |
-| `ends_at` | **yes** | `HH:MM`, must be after `starts_at`. |
-| `room` | optional | e.g. `B204`. |
-| `valid_from` | optional | Leave empty unless the slot starts mid-term. |
-| `valid_until` | optional | Leave empty unless the slot stops mid-term. |
+1. say when term runs
+2. add your courses
+3. fill in your timetable
 
-**Worked example — ME301 meets Tuesday morning and Thursday afternoon**
-
-```
-Row 1:  course_id: ME301   weekday: 2   starts_at: 09:00   ends_at: 10:30   room: B204
-Row 2:  course_id: ME301   weekday: 4   starts_at: 14:00   ends_at: 15:00   room: LAB1
-```
-
-A lab that only runs after the mid-term break is the same thing with
-`valid_from: 2026-10-20`.
+It is not a wizard — nothing is blocked behind it, every screen renders empty
+perfectly well — and it disappears for good once there is a course and a term.
+**Skip** hides it before then. That is a cookie, not a row in the database; it
+has no other effect.
 
 ---
 
-## 3. `syllabus_units`
+## 2. Term dates — `/timetable`
 
-Optional in this slice. Slice 08 builds the UI for it.
+Two dates at the top of the grid: **Term starts** and **Term ends**, saved on the
+workspace. Everything downstream reads them, so they are typed once rather than
+retyped into a form every time lectures are generated.
 
-| Column | Fill in? | Notes |
-|---|---|---|
-| `course_id` | **yes** | Dropdown. |
-| `position` | **yes** | `1`, `2`, `3`… Decimals are allowed, so `1.5` slots between 1 and 2 without renumbering. |
-| `title` | **yes** | |
-| `status` | leave | Defaults to `not_started`. The others are `shaky`, `comfortable`, `mastered`. |
-| `block_id` | leave | Filled in later when the unit gets a note. |
-
-**Worked example**
-
-```
-course_id : ME301
-position  : 1
-title     : Unit 1 — First Law and Closed Systems
-status    : (leave — defaults to not_started)
-```
+Until they are set, adding a class still saves the weekly slot — there is simply
+nothing dated to make from it yet, and the screen says so.
 
 ---
 
-## 4. `class_meetings` — generated, not typed
+## 3. Courses — `/courses` and `/courses/<id>/settings`
 
-These are the actual dated lectures: *ME301, Tuesday 14 October, 09:00, B204*.
-Your notes and files attach to these rows, so there is one per real lecture and
-they are **not** typed by hand.
+Two ways in, and both end in the same row:
 
-Generate them once the courses and sessions are in:
+- **From the grid.** Click an empty cell on `/timetable`, choose *a course not on
+  this list*, type a code, a name and a colour. This is the fast path: "MP&I
+  meets 3rd period on a Wednesday" is one thought and it should not need two
+  screens.
+- **From `/courses`.** A code and a name at the foot of the list. Use this for a
+  course with no weekly class at all — a project, a reading course — which the
+  grid has nowhere to put.
 
-```bash
-npx tsx scripts/seed-check.ts --tz=Asia/Dubai --generate=2026-09-01..2026-12-19
-```
+Everything else about a course lives on **`/courses/<id>/settings`**:
 
-- `--tz` is the timezone your printed timetable is written in. Pass it
-  explicitly; without it the script uses whatever timezone your laptop is set
-  to, which is not what you want when you travel.
-- `--generate` takes the first and last day of term, inclusive.
-- Add `--term="Fall 2026"` to limit it to one term's courses.
-
-It prints, e.g.:
-
-```
-Generated meetings for 2026-09-01..2026-12-19: 84 created, 0 updated, 0 unchanged.
-```
-
-**Running it twice is safe.** It never duplicates a lecture, and it never
-touches a lecture you have edited — one with a note, a topic, a syllabus unit,
-or a status other than `scheduled` is left exactly as it is. If you correct a
-session's time or room and re-run, the untouched lectures move into line and the
-ones you have written notes on stay put. That behaviour is what
-`modules/courses/meetings.test.ts` exists to protect.
-
-**Editing one lecture by hand** — a cancellation, a room change, what the
-lecture covered — is done directly in the table editor, on that one row:
-
-| Column | Notes |
+| Field | Notes |
 |---|---|
-| `status` | `scheduled` (default), `cancelled`, `moved`, or `held`. |
-| `topic` | What the lecture actually covered. |
-| `room` | Overrides the pattern's room for this date only. |
-| `unit_id` | Which syllabus unit it covered. |
+| `code` | The subject code, e.g. `ME301`. Shown on every screen in the app. |
+| `name` | Full title, e.g. `Thermodynamics I`. |
+| `colour` | One of the eight course colours. Eight radio buttons; no hex anywhere. |
+| `instructor` | Optional. |
+| `credits` | Optional. Halves are fine: `1.5`. An empty box means *not recorded*, which is not the same as zero. |
+| `term` | Free text, but be consistent: `Fall 2026` everywhere. |
 
-A one-off extra class is a `class_meetings` row you insert yourself with
-`session_id` left empty — that is what the nullable `session_id` is for.
+`code` must be unique within a term — the database refuses a second `ME301` in
+`Fall 2026`, which is deliberate.
 
----
+### Deleting a course
 
-## 5. `tasks`
+**Delete is for a course typed in by mistake.** The button is on the settings
+screen, and it refuses the moment anything is written against the course: a
+note, an attached file, a task, or a lecture you have edited. The refusal says
+what is in the way.
 
-Optional now; slice 06 builds the UI.
-
-| Column | Fill in? | Notes |
-|---|---|---|
-| `workspace_id` | **yes** | Dropdown. |
-| `title` | **yes** | |
-| `course_id` | optional | |
-| `unit_id` | optional | |
-| `meeting_id` | optional | The lecture it was set in. |
-| `notes` | optional | |
-| `due_at` | optional | A full timestamp, **including the timezone offset**: `2026-10-17 23:59+04`. |
-| `status` | leave | Defaults to `open`. Others: `doing`, `done`, `dropped`. |
-| `effort_min` | optional | Whole minutes, e.g. `90`. |
-| `source_block_id` | leave | Filled in when a task comes from a note or an email. |
-
-**Worked example**
-
-```
-workspace_id : <your workspace>
-course_id    : ME301
-title        : Problem set 3
-due_at       : 2026-10-17 23:59+04
-effort_min   : 90
-```
-
-`due_at` is a `timestamptz`, so it is stored as an exact instant. Typing
-`23:59` with no offset makes the database read it as UTC — always include the
-`+04`.
+That is not caution for its own sake. `courses` cascades to `class_meetings`,
+and a lecture is the row a note hangs off — deleting the course would leave the
+note's `blocks` rows unreachable, which is the same as losing them. A course you
+have actually used is *corrected*, not deleted.
 
 ---
 
-## 6. Check it
+## 4. The timetable — `/timetable`
+
+Numbered periods down the side, Monday to Friday across, one cell per slot. This
+is the shape the printed timetable is written in (`last_sem.jpeg`), which is why
+it is the shape the app uses.
+
+- **An empty cell** opens a small form: which course, which room, is it a lab.
+  The times come from the period — they are never typed.
+- **A filled cell** opens the same form to change it.
+- **Remove** drops the weekly slot and this term's *remaining, untouched*
+  lectures for it. A lecture with a note, a topic, a syllabus unit, a file, a
+  task, a cancellation — or one that has already happened — is kept, keeps
+  everything attached to it, and stays on the calendar. See
+  `modules/timetable/timetable.test.ts`.
+
+Adding or editing a class regenerates the rest of term automatically. There is
+exactly one generator in this project and it is additive: it creates only the
+lectures that do not exist, brings untouched ones back into line, and never
+modifies or duplicates one that has been written on.
+
+A course that meets twice a week at different times is **two cells**, which is
+the normal case, not an edge case.
+
+---
+
+## 5. Periods — `/timetable/periods`
+
+The rows of the grid, and their times. Nine are seeded to match `last_sem.jpeg`:
+fifty minutes each, five minutes apart, `07:30` to `15:40`.
+
+Two things to know.
+
+**The image disagrees with itself.** The handwritten grid says fifty minutes a
+period (7:30–8:20); the printed table underneath it says forty (7:30–8:10). Only
+you know which one this term runs on. Nothing in the code picks — this screen is
+where you do.
+
+**Saving a row moves no lecture.** This is the important sentence on the page and
+it is load-bearing:
+
+> `sessions.starts_at` is authoritative. A period's times are **copied into** the
+> session when a class is added; the grid does not read a lecture's time through
+> a join.
+
+So editing the 3rd period from 09:20 to 09:00 changes the row heading, and the
+times any class you add *afterwards* is given, and nothing else. Every lecture
+already on your calendar keeps the instant it was made with, and so does every
+note attached to one.
+
+Classes still sitting on the old time are then marked on the row, with an
+**Apply** button beside them. Pressing it is the only thing that moves a lecture,
+it only ever moves *future, untouched* ones, and it is your decision, not the
+app's. `modules/timetable/period-edits.test.ts` is the test that keeps all of
+this true.
+
+- **Add row** appends one — the spare `+1` at the foot of the printed timetable,
+  pre-filled to continue the pattern.
+- **Remove row** removes the heading only. The classes on it keep their own times
+  and stay on the calendar; the grid draws them by time instead, or lists them
+  underneath as not sitting on the grid.
+
+---
+
+## 6. Syllabus units — `/courses/<id>`
+
+Type the topics in from the syllabus PDF: type, enter, type, enter. Then per
+unit:
+
+- **Rename** — click the title.
+- **Reorder** — the two arrows. Positions are rewritten `1..n` after every move.
+- **Status** — one tap cycles `not_started → shaky → comfortable → mastered` and
+  round again. It is always set by hand; nothing is inferred from minutes or
+  attendance, because a guess here would make the one honest number in the app a
+  lie.
+- **Remove** — the `×`. Safe: every foreign key pointing at a unit is
+  `on delete set null`, so a lecture that covered it keeps its note and a task
+  set on it keeps its title. What is lost is the filing, not the writing.
+
+---
+
+## 7. Editing one lecture
+
+A cancellation, a room change, what the lecture actually covered — all of it is
+on that lecture's own page, reached in one tap from the calendar. Nothing about
+one lecture is edited from the timetable, because the timetable is the pattern
+and a lecture is a thing that happened.
+
+A one-off extra class — a make-up, a guest lecture, an exam — is added from the
+calendar and has no `session_id`, which is exactly what stops the generator ever
+touching it.
+
+---
+
+## 8. Check it
+
+The script from slice 01 still exists and is still the honest answer:
 
 ```bash
 npx tsx scripts/seed-check.ts --tz=Asia/Dubai
 ```
 
-It prints your courses, your classes today, and your class meetings and tasks
-for the next seven days. Add `--date=2026-10-13` to look at a specific day —
-useful in August when term has not started.
+It prints your courses, your classes today, and your class meetings and tasks for
+the next seven days. Add `--date=2026-10-13` to look at a specific day — useful
+in August when term has not started.
 
 What you are checking for:
 
 - every course appears once, with the right code
 - a Tuesday shows the classes your printed timetable says are on a Tuesday
 - the times read as the times on your timetable, not shifted by a few hours
-  (if they are shifted, you passed the wrong `--tz` when generating)
+  (if they are shifted, `TZ` is wrong — see the conventions at the top)
 - rooms are right
 
-If the times are wrong, fix the `sessions` rows, then re-run `--generate` for
-the same term dates. Untouched meetings will move; nothing you have written
-against a lecture will be lost.
+It can still **generate** as well, which is what `/timetable` now does for you:
+
+```bash
+npx tsx scripts/seed-check.ts --tz=Asia/Dubai --generate=2026-09-01..2026-12-19
+```
+
+Running it twice is safe. It never duplicates a lecture and never touches one you
+have written on. `/settings/semester` is the same thing with a button, and is the
+right tool when you have corrected several classes at once.
+
+---
+
+## What is left in the Supabase table editor
+
+Nothing you need for a semester. The tables the app does not yet have a screen
+for — `derivations`, `email_proposals`, `block_embeddings` — are all engine
+internals, and none of them is something to type by hand.

@@ -89,7 +89,7 @@ export default async function SemesterPage({
         {courses.length === 0 ? (
           <EmptyState
             title="No courses yet"
-            description="Add your courses and their weekly sessions first — docs/SEEDING.md has the steps."
+            description="Add your courses and their weekly classes on the timetable first."
           />
         ) : (
           <ul className="divide-y divide-line">

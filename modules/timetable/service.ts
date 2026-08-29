@@ -3,12 +3,16 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { localTimeZone, todayIn } from '@/lib/time';
 import {
   createCourse,
+  deleteCourse,
   createSession,
   generateMeetings,
+  getCourse,
   getCourses,
+  getMeetingsForCourse,
   getMeetingsForSession,
   getSession,
   getSessions,
+  getSessionsForPeriod,
   meetingWasHandEdited,
   removeMeetings,
   removeSession,
@@ -18,19 +22,27 @@ import {
   type GenerateMeetingsResult,
   type Session,
 } from '@/modules/courses';
-import { getFilesForMeeting } from '@/modules/files';
-import { getTasksForMeeting } from '@/modules/tasks';
+import { getFilesForCourse, getFilesForMeeting } from '@/modules/files';
+import { listNotes } from '@/modules/notes';
+import { getTasks, getTasksForMeeting } from '@/modules/tasks';
 import { getWorkspace, type Workspace } from '@/modules/workspaces';
 
 import * as repo from './repo';
 import {
   addClassInputSchema,
+  addPeriodInputSchema,
   DEFAULT_PERIODS,
   updateClassInputSchema,
+  updatePeriodInputSchema,
   type AddClassInput,
+  type AddPeriodInput,
+  type ApplyPeriodResult,
   type Period,
+  type PeriodUsage,
   type RemoveClassResult,
+  type RemoveCourseResult,
   type UpdateClassInput,
+  type UpdatePeriodInput,
 } from './schema';
 
 // The timetable: the printed period grid, and the three things you can do to a
@@ -74,6 +86,172 @@ export async function getPeriods(
       ends_at: period.endsAt,
     }))
   );
+}
+
+/**
+ * Add a row to the grid — the spare "+1" at the bottom of last_sem.jpeg, or a
+ * tenth period the year a timetable grows one.
+ *
+ * It lands at the end, because the grid is read top to bottom and a row that
+ * appears in the middle of a printed timetable is a different timetable.
+ */
+export async function addPeriod(
+  db: SupabaseClient,
+  input: AddPeriodInput
+): Promise<Period> {
+  const parsed = addPeriodInputSchema.parse(input);
+  if (parsed.endsAt <= parsed.startsAt) {
+    throw new Error('addPeriod: a period cannot end before it starts');
+  }
+
+  const existing = await getPeriods(db, parsed.workspaceId);
+  const position = existing.reduce((max, period) => Math.max(max, period.position), 0) + 1;
+
+  return repo.insertPeriod(db, {
+    workspace_id: parsed.workspaceId,
+    position,
+    label: parsed.label,
+    starts_at: parsed.startsAt,
+    ends_at: parsed.endsAt,
+  });
+}
+
+/**
+ * Correct a row's times or its label — where the 50-minute-vs-40-minute
+ * disagreement between the two halves of last_sem.jpeg gets settled.
+ *
+ * *** THIS DOES NOT MOVE A SINGLE LECTURE. ***
+ *
+ * `sessions.starts_at` is authoritative and the period's times were copied into
+ * the session when the class was added (docs/DECISIONS.md, slice 16). So this
+ * changes the row heading on the grid, and the times any class added *after* it
+ * will be given, and nothing else. Every `class_meetings` row that already
+ * exists keeps the instant it already had, notes and files included.
+ *
+ * The classes already sitting on the row are then out of step with it, which is
+ * visible on the screen and is fixed — deliberately, by pressing a button, on
+ * Aadit's say-so — by `applyPeriodToClasses` below. Doing it silently here is
+ * the bug this whole project exists to avoid.
+ */
+export async function updatePeriod(
+  db: SupabaseClient,
+  input: UpdatePeriodInput
+): Promise<Period> {
+  const parsed = updatePeriodInputSchema.parse(input);
+
+  const period = await repo.findPeriod(db, parsed.workspaceId, parsed.periodId);
+  if (!period) throw new Error(`updatePeriod: no period ${parsed.periodId} here`);
+
+  const startsAt = parsed.startsAt ?? period.starts_at;
+  const endsAt = parsed.endsAt ?? period.ends_at;
+  if (endsAt <= startsAt) {
+    throw new Error('updatePeriod: a period cannot end before it starts');
+  }
+
+  return repo.updatePeriodRow(db, parsed.periodId, {
+    ...(parsed.label === undefined ? {} : { label: parsed.label }),
+    ...(parsed.startsAt === undefined ? {} : { starts_at: parsed.startsAt }),
+    ...(parsed.endsAt === undefined ? {} : { ends_at: parsed.endsAt }),
+  });
+}
+
+/**
+ * Take a row off the grid.
+ *
+ * The classes on it are not deleted and their lectures are not deleted:
+ * `sessions.period_id` is `on delete set null`, so each class keeps its own
+ * times and simply stops being drawn on a row. `buildGrid` then places it by
+ * its start time, or lists it under the grid as unplaced — visible either way.
+ *
+ * The rows left are renumbered 1..n, ascending, so the unique index on
+ * `(workspace_id, position)` is never transiently collided with.
+ */
+export async function removePeriod(
+  db: SupabaseClient,
+  workspaceId: string,
+  periodId: string
+): Promise<Period[]> {
+  const period = await repo.findPeriod(db, workspaceId, periodId);
+  if (!period) throw new Error(`removePeriod: no period ${periodId} in this workspace`);
+
+  await repo.deletePeriod(db, periodId);
+
+  const left = await repo.listPeriods(db, workspaceId);
+  for (const [index, row] of left.entries()) {
+    if (row.position !== index + 1) {
+      await repo.updatePeriodRow(db, row.id, { position: index + 1 });
+    }
+  }
+  return repo.listPeriods(db, workspaceId);
+}
+
+/**
+ * The other half of the period edit, and the only half that touches a lecture.
+ *
+ * Pressed by hand, once, when the row heading has been corrected and the
+ * classes on it should follow. It rewrites those weekly slots' times and then
+ * runs the one generator, which is additive: it moves the *remaining, untouched*
+ * lectures of this term into line and never modifies a lecture that carries a
+ * note, a topic, a unit or a cancellation, and never touches one in the past
+ * because "the rest of term" starts today.
+ *
+ * So even the explicit path cannot rewrite history. It is a smaller promise
+ * than "nothing moves", made loudly, rather than a large one made silently.
+ */
+export async function applyPeriodToClasses(
+  db: SupabaseClient,
+  workspaceId: string,
+  periodId: string,
+  timeZone: string = localTimeZone()
+): Promise<ApplyPeriodResult> {
+  const period = await repo.findPeriod(db, workspaceId, periodId);
+  if (!period) {
+    throw new Error(`applyPeriodToClasses: no period ${periodId} in this workspace`);
+  }
+
+  const sessions = await getSessionsForPeriod(db, workspaceId, periodId);
+  const behind = sessions.filter((session) => !matchesPeriod(session, period));
+
+  for (const session of behind) {
+    await updateSession(db, workspaceId, session.id, {
+      startsAt: period.starts_at,
+      endsAt: period.ends_at,
+    });
+  }
+
+  return {
+    classes: behind.length,
+    generated:
+      behind.length === 0 ? null : await generateRestOfTerm(db, workspaceId, timeZone),
+  };
+}
+
+/** A session sits on its period when its own times are still the period's. */
+function matchesPeriod(session: Session, period: Period): boolean {
+  return (
+    session.starts_at.slice(0, 5) === period.starts_at.slice(0, 5) &&
+    session.ends_at.slice(0, 5) === period.ends_at.slice(0, 5)
+  );
+}
+
+/** How many classes each row carries, and how many of them it no longer matches. */
+export async function getPeriodUsage(
+  db: SupabaseClient,
+  workspaceId: string
+): Promise<PeriodUsage[]> {
+  const [periods, sessions] = await Promise.all([
+    getPeriods(db, workspaceId),
+    getSessions(db, workspaceId),
+  ]);
+
+  return periods.map((period) => {
+    const mine = sessions.filter((session) => session.period_id === period.id);
+    return {
+      periodId: period.id,
+      classes: mine.length,
+      outOfStep: mine.filter((session) => !matchesPeriod(session, period)).length,
+    };
+  });
 }
 
 /** Everything /timetable draws, in one call. */
@@ -305,4 +483,58 @@ export async function removeClass(
   await removeSession(db, workspaceId, sessionId);
 
   return { removed, kept: meetings.length - removed };
+}
+
+/**
+ * Remove a course — and refuse the moment doing so would cost anything written.
+ *
+ * `courses` cascades. Deleting one deletes its sessions, its syllabus units and
+ * every one of its dated lectures, and a lecture is the row a note hangs off:
+ * the note's `blocks` rows would survive as unreachable orphans, which is the
+ * same as losing them. So this asks first, and says no.
+ *
+ * "Written on" is the widest reading available: any note (a lecture note or a
+ * free-standing one filed under the course), any lecture that has been
+ * hand-edited, any attached file, any task. If any of them exists the course
+ * stays, and the counts come back so the screen can say what is in the way.
+ *
+ * Which means: **delete is for a course typed in by mistake**, not for
+ * withdrawing from one in week nine. A course you have used is corrected — its
+ * code, its name, its colour — rather than deleted. That is the safe direction
+ * to be wrong in; the other direction has no undo.
+ *
+ * This lives here rather than in modules/courses for the reason `removeClass`
+ * does: the question needs modules/files, modules/tasks and modules/notes, and
+ * all three import modules/courses. Asking it from here keeps that arrow
+ * pointing one way.
+ */
+export async function removeCourse(
+  db: SupabaseClient,
+  workspaceId: string,
+  courseId: string
+): Promise<RemoveCourseResult> {
+  const course = await getCourse(db, workspaceId, courseId);
+  if (!course) throw new Error(`removeCourse: no course ${courseId} in this workspace`);
+
+  const [meetings, notes, files, tasks] = await Promise.all([
+    getMeetingsForCourse(db, workspaceId, courseId),
+    listNotes(db, workspaceId),
+    getFilesForCourse(db, workspaceId, courseId),
+    getTasks(db, workspaceId),
+  ]);
+
+  const found: RemoveCourseResult = {
+    removed: false,
+    notes: notes.filter((note) => note.courseId === courseId).length,
+    lecturesWithWork: meetings.filter(meetingWasHandEdited).length,
+    files: files.length,
+    tasks: tasks.filter((task) => task.course_id === courseId).length,
+  };
+
+  if (found.notes + found.lecturesWithWork + found.files + found.tasks > 0) {
+    return found;
+  }
+
+  await deleteCourse(db, workspaceId, courseId);
+  return { ...found, removed: true };
 }
