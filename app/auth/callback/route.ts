@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { EmailOtpType } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/server';
+import { hasProfile } from '@/modules/profiles';
 import { ensureWorkspace } from '@/modules/workspaces';
 
 // Lands here from the magic-link email. Exchanges the link for a session,
@@ -30,7 +31,17 @@ export async function GET(request: Request) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (user) await ensureWorkspace(supabase, user.id);
+  if (!user) return NextResponse.redirect(new URL('/today', url.origin));
 
-  return NextResponse.redirect(new URL('/today', url.origin));
+  await ensureWorkspace(supabase, user.id);
+
+  // A workspace is created for you; a username is not. There is no name this
+  // app could invent that anybody would want to keep, so slice 18 asks instead
+  // — and this is where a brand-new account meets that question.
+  //
+  // The proxy enforces the same rule on every other route. Sending them
+  // straight there rather than to /today is only to save a redirect hop.
+  const named = await hasProfile(supabase, user.id);
+
+  return NextResponse.redirect(new URL(named ? '/today' : '/welcome', url.origin));
 }

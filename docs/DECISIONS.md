@@ -2200,9 +2200,161 @@ describes a process the app has replaced is worse than none.
 
 ---
 
+## 2026-09-06 — The trip app in the Recalc database, and how it got there
+Because: slice 18 needed a table called `profiles` and the name was taken. The
+occupant was not ours. Eighteen tables belonging to a trip-planning app
+(`trips`, `trip_members`, `experiences`, `regions`, `votes`, `profiles`,
+`users`, …) were sitting in this project, holding 94 rows written on 28–29
+August. None of them appear in `supabase_migrations.schema_migrations`, which
+lists `001`–`012` and nothing else — so no migration here created them. That
+app lives at `code-ide/vs-code/trip/`, its `.env.local` now points at its own
+`georgia-trip` project, and its data is there. For a period in late August it
+was pointed at this one instead.
+
+Two of the eighteen were doing active harm rather than merely sitting there:
+
+- `public.profiles` occupied this slice's name.
+- **`on_auth_user_created`, a trigger on `auth.users`**, called
+  `handle_new_auth_user()`, which inserted a row into that `profiles` table for
+  every sign-up *in this project* — Recalc's included. That is why a trip
+  profile row and a Recalc workspace row were written nineteen seconds apart on
+  29 August. Left alone it would have fought this slice's own `profiles` table
+  on every new account.
+
+Migration 013 drops all eighteen, the trigger, and the trip app's 28 functions,
+each named explicitly rather than swept up by a `DO` block so that what the
+migration destroys can be read off the page. The 94 rows were dumped to JSON
+first.
+
+Instead of: creating a fresh Supabase project for Recalc, which was the plan
+until the migration ledger showed the tables were squatters rather than a shared
+schema. A new project would have cost new env vars in `.env.local` and Vercel,
+recreated auth users, and left the project *named* `recalc` hosting a trip app.
+Also instead of: prefixing our table `recalc_profiles` and living beside them —
+that accepts a mess as permanent, and the `auth.users` trigger would still have
+fired on every sign-up.
+
+The general lesson, worth more than the incident: a Supabase anon key is scoped
+to a *project*, not to an application. Any codebase holding the URL and key can
+create tables in it, and nothing in Postgres will object. The only thing keeping
+two apps apart is which URL each repo's `.env` contains.
+
+## 2026-09-06 — A username is the one thing this app blocks on
+Because: everything else in setup is optional in a way a username is not. The
+term, the courses, the timetable, an API key and a Google account are all steps
+on a card that ticks itself off, and `/today` renders perfectly well with none
+of them done — that was slice 17's decision and it stands. A username is
+different: it is what one person types to add another, and there is no version
+of a friends list that works without one. So `/welcome` is a real gate, enforced
+in `proxy.ts` and re-checked by the page itself.
+Instead of: auto-generating one from the email address, which would have kept
+the no-blocking rule intact and produced a friends list full of
+`aaditchandra2212`. Nobody ever changes a generated username, and the cost of
+that is paid by the people trying to find you. Also instead of: a full wizard —
+the other four steps genuinely can wait, and a wizard would have made them look
+like they cannot.
+
+## 2026-09-06 — Looking someone up is a `security definer` function, not a policy
+Because: `profiles_select` returns your own row and nothing else, which is too
+tight to find a friend with. The obvious fix — widen the policy so any signed-in
+user can read any profile — makes every account on the app enumerable by anyone
+who signs up, and that is not a thing you can take back once other people have
+joined. So the policy stays narrow and `find_profile_by_username` is the single
+door past it: exact match, at most one row, never yourself, `search_path = ''`,
+and `execute` revoked from `public` so the anon key in the browser cannot call
+it. `modules/profiles/repo.ts` is its only caller and contains no `ilike`.
+Known limit, accepted: someone can still confirm a username they already
+suspect by typing it in. Prefix enumeration is impossible; exact-string guessing
+is not. This is the trade Signal and Venmo make. Rate limiting is a later
+slice's problem, and is written down here so that slice knows it inherited it.
+Instead of: a prefix search, which was the friendlier option and is the one that
+cannot be undone.
+
+## 2026-09-06 — The proxy makes one extra round trip on every signed-in request
+Because: the username gate has to hold on every route, and `proxy.ts` is the
+only place that runs on every route. It is a primary-key lookup on `profiles`,
+and it buys the guarantee that no screen in the app ever has to handle a signed-
+in user with no name. At one student's scale that is the right trade; at a
+thousand it is not, and the fix when it comes is to put the flag in the JWT's
+`app_metadata` at claim time rather than to remove the gate.
+Instead of: a cookie, which would have been free and forgeable — forging it only
+lets someone skip the welcome screen, which grants nothing, but it would leave
+accounts without usernames in a table slice 19 assumes has one per row.
+
+## 2026-09-06 — The setup card gained two steps but did not gain two conditions
+Because: `settingUp` is still `courses.length === 0 || !termSet`, unchanged.
+"Add an AI key" and "Connect Google" appear on the card as guidance while it is
+up, but neither keeps it up. Connecting Google is optional for ever — some
+people will never want it — and a setup card that never disappears is a card
+that gets ignored, taking the other four steps with it.
+Instead of: extending the condition to all five steps, which was the plan and is
+wrong for exactly the reason above.
+
+Consequence worth noting: `SetUpAgentsStrip` is now suppressed while the card is
+showing, because the card lists the same step and asking twice on one screen
+reads as nagging. The two have different jobs — the card is the first-week
+checklist, the strip is the permanent reminder that outlives it.
+
+## 2026-09-06 — Google sign-in grants no Drive and no Gmail, and says so
+Because: they are separate consents and bundling them would be the wrong
+default. `signInWithGoogle` asks for identity only; `/settings/drive` and
+`/settings/email` ask for `drive.file` and `gmail.readonly` when the user
+actually wants those features. It reuses the same Google Cloud OAuth client —
+one client per *application* is what a Google OAuth client is — with Supabase's
+callback added as a second authorised redirect URI.
+This surprises people, so `/login` says it in one line rather than leaving it to
+be discovered. Recorded because the temptation to "simplify" by asking for
+everything at the login screen will come back.
+
+## 2026-09-06 — `/login` finally uses the design system
+Because: the page carried the comment "bare on purpose — the design system
+arrives in slice 02" and slice 02 was fifteen slices ago. It could not gain a
+second sign-in button without picking one look or the other, and inline
+`border px-2 py-1` beside a `Button` is worse than either.
+Instead of: leaving it alone under rule 9. The rule is about not improving code
+outside the slice; this page *is* inside the slice, and the choice was forced by
+the change rather than found while looking around.
+
+---
+
 ## Noticed, not fixed
 
 Things spotted outside the current slice. Do not fix them mid-slice; write them here.
+
+- `lib/database.types.ts` still describes the trip app's tables until
+  `npm run db:types` is re-run after migration 013. It is generated, so this is
+  a stale artefact rather than a bug, but it is 2402 lines of which roughly half
+  are another product's and it should be about 1200.
+- The setup card disappears when a term and a course exist, even if the
+  timetable is still empty — `settingUp` has never read `hasClasses`, though the
+  card has always drawn a step for it. Predates slice 18 and was left alone.
+  Whether that is a bug depends on whether the card is "the app is unusable" or
+  "here is what to do first", and nobody has decided.
+- A username cannot be changed once claimed. `ProfileAlreadyExists` is thrown on
+  a second claim and there is no rename path. That is deliberate for slice 18 —
+  a rename breaks other people's memory of who you are, and once slice 19 lands
+  it breaks the name on a pending request — but somebody will want it, and the
+  interesting part is what happens to the old name.
+- `find_profile_by_username` has no rate limit, so exact-string guessing is
+  unbounded. See the decision above.
+- **`reorderSyllabusUnits` does eight round trips to swap two rows.**
+  `moveSyllabusUnit` calls `ownedUnit` and then `listSyllabusUnits`, then hands
+  to `reorderSyllabusUnits`, which calls `ownedCourse` and `listSyllabusUnits`
+  *again*, `await`s each changed position one at a time inside a `for` loop, and
+  lists a third time. Measured against this project's database, one round trip
+  is ~600ms (ap-southeast-2; this machine is not), so pressing an arrow on the
+  course page costs about five seconds. This is what pushed
+  `syllabus-units.test.ts` past its 30s timeout in slice 18 — the timeout was
+  raised because the N+1 is outside that slice, not because the N+1 is fine.
+  The fix is one `listSyllabusUnits`, one ownership check, and a single bulk
+  update of the changed rows.
+- **The database is in Sydney and its user is not.** ~600ms per round trip, of
+  which almost none is query time. Every page that makes queries in sequence
+  rather than in a `Promise.all` pays it once per query — including `proxy.ts`,
+  which since slice 18 makes two sequential calls (`getUser`, then the profile
+  lookup) before any page begins to render. Moving the project to a nearer
+  region is the single largest performance change available to this app and is
+  a bigger decision than any slice.
 
 - ~~Migration 001 was applied by pasting it into the Supabase SQL editor, so the
   CLI's migration history table does not record it.~~ **Fixed in slice 01** — see

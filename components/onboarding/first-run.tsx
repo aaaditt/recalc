@@ -30,11 +30,17 @@ export function FirstRun({
   termSet,
   hasCourses,
   hasClasses,
+  hasModel,
+  hasGoogle,
   dismiss,
 }: {
   termSet: boolean;
   hasCourses: boolean;
   hasClasses: boolean;
+  /** Any model in the `fast` role. The cheapest question to ask about agents. */
+  hasModel: boolean;
+  /** A connected Google account — either half, Drive or Gmail. */
+  hasGoogle: boolean;
   /** Hides the card for good. Everything else here is derived from real data. */
   dismiss: () => Promise<void>;
 }) {
@@ -59,6 +65,25 @@ export function FirstRun({
       hint: 'Click the cell where a class sits and name it. The lectures follow.',
       href: '/timetable',
       cta: 'Open the grid',
+    },
+    // The two steps slice 18 added. They are last because the three above make
+    // the app show you your week, and these two make it start thinking — which
+    // is the right order to meet them in, and also the order of how much each
+    // one costs you. Both are genuinely optional: every screen renders, and
+    // every deadline still lands, with neither of them done.
+    {
+      done: hasModel,
+      title: 'Add an AI key',
+      hint: 'Your own key, your own provider. Summaries and answers need one.',
+      href: '/settings/agents',
+      cta: 'Paste a key',
+    },
+    {
+      done: hasGoogle,
+      title: 'Connect Google',
+      hint: 'Optional. Attach files from Drive, and read deadlines out of mail.',
+      href: '/settings/drive',
+      cta: 'Connect',
     },
   ];
 

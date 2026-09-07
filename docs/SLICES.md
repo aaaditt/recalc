@@ -23,6 +23,9 @@ column as you go — this is how a fresh session knows where we are.
 | 15 | Email extraction — proposals queue | done |
 | 16 | **Timetable** — the period grid, click a cell to add or edit a class | done |
 | 17 | **Semester setup** — first-run steps, course settings, syllabus editing, period editor | done |
+| 18 | **Identity** — usernames, the welcome gate, Google sign-in | done |
+| 19 | Friends — requests, accept/decline, per-friend visibility | not started |
+| 20 | Compare — one friend's free/busy or detail, beside yours | not started |
 
 ## Why this order
 
@@ -146,11 +149,47 @@ Slices 00–09 give you a genuinely good semester planner. Slices 11 and 12 are 
 part that does not exist anywhere else. If time gets tight, skip 14 and 15
 entirely.
 
+Slice 18 needs nothing set up, and is the first slice to cross a line
+`docs/PRODUCT.md` had drawn: "Single user. No sharing, no teams, no invites."
+It crossed only the narrowest part of it. A workspace is still one person's —
+no note, block, task or file is readable by anybody else — and what is new is a
+*name*. Signing in with a brand-new account now lands on `/welcome` and asks for
+one, which is the only screen in this app that blocks; every other setup step is
+still a tickable line on a card that can be skipped for ever. `/login` grew a
+"Continue with Google" button beside the magic link, and the setup card grew two
+steps (an AI key, a Google account) which appear on it without keeping it up.
+
+The dangerous part of the slice is not the gate, it is the lookup, and the whole
+of it is proved against the real database in `modules/profiles/username.test.ts`
+(10 tests) — signed in as two real users through the anon key, because the
+service-role key bypasses RLS and a test written with it would pass whether the
+policies existed or not. **A prefix of a real username finds nobody**, at every
+prefix length, and neither does a suffix or a fragment, while the exact string
+finds them every time — the positive control matters, because without it every
+other assertion would also pass if the function were simply broken. Bob cannot
+`select` Alice's row by id or by username or at all, and can read his own the
+moment he has one. A username is unique case-insensitively because a functional
+index says so, not because the service checked first.
+
+Migration 013 also evicted another application's eighteen tables, twenty-eight
+functions and one `auth.users` trigger from this database. They were not in the
+migration ledger and were never ours. See `docs/DECISIONS.md`, "The trip app in
+the Recalc database" — the trigger had been writing a row for every Recalc
+sign-up since 29 August.
+
+Slices 19 and 20 have their schema settled but no code: `friendships` with two
+directional visibility columns (what I show you and what you show me are
+different choices), and a second `security definer` function for the timetable
+comparison. `sessions` has no `workspace_id` — it reaches a workspace only
+through `courses` — so its RLS policy is three tables deep already and must not
+be widened.
+
 ## What to build next
 
-The seventeen planned slices are done. This list is not a wishlist — every item is
-something the build actually ran into, and every one of them is already written
-down under "Noticed, not fixed" in `docs/DECISIONS.md`. In order.
+The seventeen planned slices are done, and slice 18 has been added on top of
+them. This list is not a wishlist — every item is something the build actually
+ran into, and every one of them is already written down under "Noticed, not
+fixed" in `docs/DECISIONS.md`. In order.
 
 1. **Make a note's version move when its set of paragraphs changes.** Adding a
    paragraph stales nothing, and soft-deleting one stales nothing either,

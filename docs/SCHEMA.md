@@ -189,6 +189,57 @@ email_proposals (id, email_id, kind, payload jsonb, confidence, status)
                 -- status: proposed | accepted | rejected   <- human in the loop, always
 ```
 
+## People (slice 18)
+
+The first table about a *person* rather than about their semester. Everything else
+in this file belongs to a workspace; a workspace belongs to an `auth.users` row
+that, until this table, nothing ever had to name.
+
+```sql
+create table profiles (
+  id           uuid primary key references auth.users(id) on delete cascade,
+  username     text not null,          -- lowercase; 3-20 of [a-z0-9_]
+  display_name text,
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now()
+);
+create unique index profiles_username_key on profiles (lower(username));
+```
+
+`id` **is** the `auth.users` id — there is no separate key. One row per account,
+enforced by the primary key rather than by a unique index someone could forget.
+
+The unique index is functional, on `lower(username)`, so `Aadit` and `aadit` are
+the same name. `citext` would be tidier and is not worth an extension.
+
+### Reading someone else's profile
+
+`profiles_select` returns **your own row and nothing else**:
+
+```sql
+create policy profiles_select on profiles for select to authenticated
+  using (id = (select auth.uid()));
+```
+
+That is deliberately too tight to look a friend up with, and the gap is filled by
+one `security definer` function rather than by a wider policy:
+
+```sql
+find_profile_by_username(p_username text)
+  returns table (id uuid, username text, display_name text)
+  -- exact match, at most one row, never yourself
+```
+
+A policy permissive enough to find `@aadit` by name is permissive enough to list
+every account on the app. Exact-string guessing is still possible and is an
+accepted limit (docs/DECISIONS.md); prefix enumeration is not, and
+`modules/profiles/username.test.ts` is what keeps it that way.
+
+Slice 19 widens `profiles_select` to accepted friends. Slice 20 widens nothing:
+comparing timetables goes through a second `security definer` function, because
+`sessions` reaches a workspace only through `courses` and that policy is three
+tables deep already.
+
 ## Agents (bring your own key)
 
 ```sql

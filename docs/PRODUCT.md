@@ -45,7 +45,14 @@ is ambiguous, choose whatever gets closer to being able to say it.
 
 ## Scope boundaries — do not cross without being asked
 
-- **Single user.** No sharing, no teams, no invites. Keep `user_id` on every row anyway.
+- **One person per workspace.** Slice 18 crossed the line this bullet used to
+  draw ("Single user. No sharing, no teams, no invites"), because coordinating a
+  meeting time with a classmate is a real thing a study app is asked to do. What
+  it did *not* do is make a workspace shared. Notes, blocks, derivations, tasks
+  and files still belong to exactly one person and are readable by exactly that
+  person. What is new is a name (`profiles`), and — in slices 19 and 20 — a
+  friendship and a way to compare two timetables. Nothing else crosses.
+  The rule that made this cheap still stands: keep `user_id` on every row.
 - **No real-time collaboration.** No CRDTs, no Yjs, no presence. Blocks having stable
   ids and versions keeps that door open for later; do not walk through it now.
 - **No native mobile app.** PWA only.

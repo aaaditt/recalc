@@ -32,6 +32,7 @@ import {
 } from '@/lib/today';
 import { hasAgentRole } from '@/modules/agents';
 import { getCourses, getMeetingsOnDate, getSessions } from '@/modules/courses';
+import { getGoogleAccount } from '@/modules/google';
 import { getMinutesOnDate, getMinutesThisWeek } from '@/modules/study';
 import { getOverdueTasks, getTasksDueBetween, type Task } from '@/modules/tasks';
 import { ensureWorkspace } from '@/modules/workspaces';
@@ -130,6 +131,7 @@ export default async function TodayPage() {
     minutesToday,
     minutesThisWeek,
     hasFastModel,
+    googleAccount,
   ] = await Promise.all([
       getCourses(supabase, workspace.id),
       getMeetingsOnDate(supabase, workspace.id, today, zone),
@@ -147,13 +149,24 @@ export default async function TodayPage() {
       // The one question this page asks about agents: is there a fast model at
       // all? Keyed by user, not workspace — see docs/SCHEMA.md.
       hasAgentRole(supabase, user.id, 'fast'),
+      // Slice 18: the setup card's last step. Also keyed by user — one person's
+      // Google account is not a fact about their timetable.
+      getGoogleAccount(supabase, user.id),
     ]);
 
-  // The first thing Aadit meets is an empty database, and this is the only
-  // screen that says so. Three steps, ticked off real data, and gone for good
-  // the moment there is both a course and a term — which is the point at which
-  // there is something on this page worth reading instead. Not a wizard:
-  // nothing here blocks the app, and /today renders perfectly well underneath.
+  // The first thing a new account meets is an empty database, and this is the
+  // only screen that says so. Five steps since slice 18, ticked off real data,
+  // and gone for good the moment there is both a course and a term — which is
+  // the point at which there is something on this page worth reading instead.
+  // Not a wizard: nothing here blocks the app, and /today renders perfectly
+  // well underneath. The one thing that *does* block is a username, and that
+  // happens on /welcome before this page is ever reached.
+  //
+  // The condition is still "a course and a term" and deliberately not "all five
+  // steps". Connecting Google is optional for ever — some people will never
+  // want it — and a setup card that never goes away is a card that gets
+  // ignored. The two steps slice 18 added are guidance while it is up, not
+  // conditions for taking it down. See docs/DECISIONS.md.
   //
   // The extra read is inside the `if`, so it is made only while the card is
   // actually being drawn — never once the semester is set up.
@@ -203,6 +216,8 @@ export default async function TodayPage() {
             termSet={termSet}
             hasCourses={courses.length > 0}
             hasClasses={sessions.length > 0}
+            hasModel={hasFastModel}
+            hasGoogle={googleAccount !== null}
             dismiss={skipFirstRunAction}
           />
         </div>
@@ -218,8 +233,13 @@ export default async function TodayPage() {
       </div>
 
       {/* One quiet line, once, until a `fast` model exists — prompts/10-agents.md:
-          "not a modal, not a wizard". */}
-      {hasFastModel ? null : (
+          "not a modal, not a wizard".
+
+          Suppressed while the setup card is up, because since slice 18 that card
+          lists the same step. Asking twice on one screen reads as nagging, and
+          the two have different jobs: the card is the first-week checklist, this
+          is the permanent reminder that outlives it. */}
+      {hasFastModel || settingUp ? null : (
         <div className="pt-3">
           <SetUpAgentsStrip />
         </div>

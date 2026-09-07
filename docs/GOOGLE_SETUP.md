@@ -85,16 +85,43 @@ future change tries to.
   ```
   http://localhost:3000/api/auth/google/callback
   https://<your-app>.vercel.app/api/auth/google/callback
+  https://<your-project-ref>.supabase.co/auth/v1/callback
   ```
 
   The second one only once you have deployed; you can come back and add it. The
   path is `/api/auth/google/callback` and the app builds it from whatever origin
   the browser is on, so it must match character for character.
 
+  The **third** is Supabase's own, and it is there for "Continue with Google" on
+  `/login` (slice 18). It is a different flow from the two above and it is worth
+  being clear why they share a client: a Google OAuth client identifies *the
+  application*, not a user and not a feature. Recalc has one, and it is used
+  three ways — to sign you in, to attach a Drive file, and to read your mail.
+  Only the last two ask for a scope that touches your data.
+
 - **Create.** Copy the **Client ID** and **Client secret**.
 
 Authorised JavaScript origins are not needed — the app never starts the OAuth
 handshake from browser JavaScript.
+
+## 4b. Turn on Google sign-in in Supabase (slice 18)
+
+Only needed for the "Continue with Google" button on `/login`. Magic-link
+sign-in works without it, and so does everything else in the app.
+
+**Supabase dashboard → Authentication → Sign In / Providers → Google.**
+
+- Enable it.
+- Paste the **same** Client ID and Client secret from step 4.
+- The callback URL it shows you is the third redirect URI you added above. If
+  you skipped that, add it now or the button returns `redirect_uri_mismatch`.
+
+**This does not grant Drive or Gmail access,** and it is not meant to. Signing in
+with Google proves who you are; `/settings/drive` and `/settings/email` are where
+`drive.file` and `gmail.readonly` are asked for, separately and on purpose. A
+user who has signed in with Google still has to connect Drive before the picker
+works — that is the design, not a bug, and `/login` says so in a line under the
+form.
 
 ## 5. Create the Picker API key
 
