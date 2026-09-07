@@ -24,8 +24,24 @@ column as you go — this is how a fresh session knows where we are.
 | 16 | **Timetable** — the period grid, click a cell to add or edit a class | done |
 | 17 | **Semester setup** — first-run steps, course settings, syllabus editing, period editor | done |
 | 18 | **Identity** — usernames, the welcome gate, Google sign-in | done |
-| 19 | Friends — requests, accept/decline, per-friend visibility | not started |
-| 20 | Compare — one friend's free/busy or detail, beside yours | not started |
+| 19 | **Onboarding** — `/start`, a guided path that teaches by doing | designed, not built |
+| 20 | **Speed** — optimistic UI, and fewer round trips per save | not started |
+| 21 | Just-in-time hints — a feature explains itself when it becomes useful | not started |
+| 22 | Friends — requests, accept/decline, per-friend visibility | not started |
+| 23 | Compare — one friend's free/busy or detail, beside yours | not started |
+| ?? | All-day timetable — a 12am–12am day holding named blocks | **not designed** |
+
+Slice 19 has an approved design at
+`docs/superpowers/specs/2026-09-08-onboarding-design.md`. Read it before
+building; it records what was rejected as well as what was chosen.
+
+Slices 22 and 23 have their schema settled in this file and in `docs/SCHEMA.md`
+but no design document.
+
+The all-day timetable has neither. It is the one item here that changes what
+`sessions` and `periods` *mean* — a day would become a container of blocks, one
+of which is the college timetable that currently owns the whole screen — so it
+needs a brainstorm before it needs a plan. Do not start it from this table row.
 
 ## Why this order
 
