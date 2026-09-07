@@ -1,6 +1,6 @@
 # Onboarding — a guided path that teaches by doing
 
-Slice 19. Design approved 2026-09-08.
+Slice 20. Design approved 2026-09-08.
 
 ## Why
 
@@ -22,7 +22,7 @@ This slice replaces it with a real destination.
 | **Teach by doing** — every step is a real action on the real screen, and the app fills with the user's own data as they go | A spotlight/tooltip tour. It reverses three explicit "not a modal, not a wizard" decisions in this codebase, and it would narrate six empty screens |
 | **Two acts, split by a prerequisite** — Act 2 needs an AI key | Framing Act 2 as "optional". Every step is optional; the real difference is that Act 2 needs a key the user may not have |
 | **One step at a time** (`/start`) | The full checklist. All steps visible is more efficient and less welcoming; "welcoming" is the goal here |
-| **Setup only on `/start`** | A step per feature. Search, Review, Focus and Questions cannot be demonstrated with an empty account. They become slice 20's just-in-time hints |
+| **Setup only on `/start`** | A step per feature. Search, Review, Focus and Questions cannot be demonstrated with an empty account. They become slice 21's just-in-time hints |
 | **No entry in the main nav** | A nav link. `AppNav` renders on every page, so a link would cost a database read per navigation — see "Why there is no nav entry" |
 
 ## The steps
@@ -176,8 +176,8 @@ to work one-handed on a phone.
 ## Out of scope
 
 - **Just-in-time feature hints** (Search, Review, Focus, Questions, Tasks) —
-  slice 20. Separate storage, separate trigger predicates, and folding them in
+  slice 21. Separate storage, separate trigger predicates, and folding them in
   would double this slice.
-- Friends and timetable comparison shift to slices 21 and 22.
+- Friends and timetable comparison shift to slices 22 and 23.
 - Nothing here touches the staleness engine, and
   `modules/recalc/staleness.test.ts` must still pass untouched.

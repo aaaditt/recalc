@@ -28,10 +28,10 @@ the "Continue with Google" button on `/login` (slice 18).
 `docs/SLICE_18_SETUP.md` §5. Needs step 1 done first, because it reuses the
 same client ID and secret.
 
-### 3. Slice 18 is not committed
+### 3. Nothing — slice 18 is committed and green
 
-Thirteen modified files plus `app/welcome/`, `modules/profiles/` and
-`supabase/migrations/013_profiles.sql`. `npm run check` passes on all of it.
+Left here as a note that it is done: `e1710b9`, with `npm run check` passing
+on all 440 tests.
 
 ---
 
@@ -50,31 +50,21 @@ What that causes:
   once per query.
 
 Aadit was offered a move to `ap-south-1` (Mumbai) and chose instead to fix it in
-code — optimistic UI plus fewer round trips. **That is slice 20.** The offer
+code — optimistic UI plus fewer round trips. **That is slice 19.** The offer
 stands and gets more expensive with every week of real data.
 
 ---
 
 ## Build order
 
-One slice per session (`CLAUDE.md`). 19 and 20 can be swapped — 19 has an
-approved design ready to execute, 20 is what Aadit notices every day.
+One slice per session (`CLAUDE.md`).
 
-### Slice 19 — Onboarding
+Speed goes first, ahead of the slice whose design is already written. It is the
+one thing wrong with this app that gets noticed every day, and building a
+guided onboarding path on top of a 6.6-second save would mean testing every
+step of that path at 6.6 seconds a press.
 
-**Design: `docs/superpowers/specs/2026-09-08-onboarding-design.md`. Approved.
-Read it in full; it records what was rejected and why.**
-
-A guided path at `/start`, one step at a time, that teaches by having the user
-do the real thing on the real screen. Two acts split by a prerequisite (Act 2
-needs an AI key), every step skippable, progress derived from real data and
-never stored. Replaces `components/onboarding/first-run.tsx`.
-
-The trap, and the slice's invariant: step 7's predicate must key on
-`blocks.version > 1`, not on "something is stale" — otherwise accepting the diff
-in `/review` un-ticks the step at the exact moment the user did the right thing.
-
-### Slice 20 — Speed
+### Slice 19 — Speed
 
 Aadit's own framing: a layer where adding a course updates the UI immediately
 and sends fewer queries. Precisely:
@@ -94,6 +84,20 @@ and sends fewer queries. Precisely:
 
 Optimistic UI hides the latency; the round-trip cuts remove it. Do both.
 
+### Slice 20 — Onboarding
+
+**Design: `docs/superpowers/specs/2026-09-08-onboarding-design.md`. Approved.
+Read it in full; it records what was rejected and why.**
+
+A guided path at `/start`, one step at a time, that teaches by having the user
+do the real thing on the real screen. Two acts split by a prerequisite (Act 2
+needs an AI key), every step skippable, progress derived from real data and
+never stored. Replaces `components/onboarding/first-run.tsx`.
+
+The trap, and the slice's invariant: step 7's predicate must key on
+`blocks.version > 1`, not on "something is stale" — otherwise accepting the diff
+in `/review` un-ticks the step at the exact moment the user did the right thing.
+
 ### Slice 21 — Just-in-time hints
 
 The other half of what Aadit asked for under "onboarding": each feature explains
@@ -102,7 +106,7 @@ screen on day one. One dismissible line, in the neutral palette, in the shape
 `components/today/setup-agents.tsx` already uses.
 
 Triggers must read data the screen already has, or this reintroduces the round
-trips slice 20 just removed. Storage: a dismissed-ids column on `profiles`.
+trips slice 19 just removed. Storage: a dismissed-ids column on `profiles`.
 
 ### Slice 22 — Friends
 
@@ -140,7 +144,7 @@ The full list is at the bottom of `docs/DECISIONS.md`. The ones that will bite
 soonest:
 
 - **`reorderSyllabusUnits` does eight round trips to swap two rows.** At 606ms
-  that is ~5s per arrow-press on the course page. Natural companion to slice 20.
+  that is ~5s per arrow-press on the course page. Natural companion to slice 19.
 - **A note's version does not move when its set of paragraphs changes.** Adding
   or soft-deleting a paragraph stales nothing, because the cascade fires on a
   version bump of a block already on a receipt. This is the biggest hole in the
