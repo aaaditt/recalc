@@ -49,3 +49,6 @@ last_sem.jpeg
 
 # local MCP config — holds the Supabase project ref
 .mcp.json
+
+# Brainstorming companion mockups (superpowers skill)
+.superpowers/
