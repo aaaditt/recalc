@@ -24,7 +24,7 @@ column as you go — this is how a fresh session knows where we are.
 | 16 | **Timetable** — the period grid, click a cell to add or edit a class | done |
 | 17 | **Semester setup** — first-run steps, course settings, syllabus editing, period editor | done |
 | 18 | **Identity** — usernames, the welcome gate, Google sign-in | done |
-| 19 | **Speed** — optimistic UI, and fewer round trips per save | not started |
+| 19 | **Speed** — optimistic UI, and fewer round trips per save | done |
 | 20 | **Onboarding** — `/start`, a guided path that teaches by doing | designed, not built |
 | 21 | Just-in-time hints — a feature explains itself when it becomes useful | not started |
 | 22 | Friends — requests, accept/decline, per-friend visibility | not started |
@@ -35,11 +35,14 @@ Slice 20 has an approved design at
 `docs/superpowers/specs/2026-09-08-onboarding-design.md`. Read it before
 building; it records what was rejected as well as what was chosen.
 
-Speed comes first, ahead of the slice whose design is already written, on
-purpose. It is the one thing wrong with this app that gets noticed every single
-day — adding a class takes about 6.6 seconds — and building a guided
-onboarding path on top of that would mean testing every step of it at 6.6
-seconds a press.
+Speed came first, ahead of the slice whose design is already written, on
+purpose. It was the one thing wrong with this app that got noticed every single
+day — adding a class took about 6.6 seconds — and building a guided onboarding
+path on top of that would have meant testing every step of it at 6.6 seconds a
+press. Slice 19 is done: the grid draws the class immediately, and the save
+behind it went from ten queries to eight (a new course) or from eight to six (an
+existing one), with one more removed from every signed-in request in the app.
+`modules/timetable/round-trips.test.ts` counts them so they cannot creep back.
 
 Slices 22 and 23 have their schema settled in this file and in `docs/SCHEMA.md`
 but no design document.

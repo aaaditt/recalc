@@ -28,10 +28,11 @@ the "Continue with Google" button on `/login` (slice 18).
 `docs/SLICE_18_SETUP.md` §5. Needs step 1 done first, because it reuses the
 same client ID and secret.
 
-### 3. Nothing — slice 18 is committed and green
+### 3. Nothing — slices 18 and 19 are green
 
-Left here as a note that it is done: `e1710b9`, with `npm run check` passing
-on all 440 tests.
+Slice 18 is committed at `e1710b9`. Slice 19 is built with `npm run check`
+passing on all 449 tests and `npm run build` clean. Migration 014 is applied to
+the remote database and the backfill has run.
 
 ---
 
@@ -43,15 +44,19 @@ real query, so essentially all of it is distance.
 
 What that causes:
 
-- Adding one class to the timetable takes **~11 sequential round trips ≈ 6.6s**.
+- Adding one class to the timetable took **~11 sequential round trips ≈ 6.6s**;
+  slice 19 cut it to six and made the screen respond immediately regardless.
 - `syllabus-units.test.ts` needs ~54 sequential trips; the test timeouts were
   raised from 30s to 90s in slice 18 because of it.
 - Every screen that queries in sequence rather than in a `Promise.all` pays it
   once per query.
 
 Aadit was offered a move to `ap-south-1` (Mumbai) and chose instead to fix it in
-code — optimistic UI plus fewer round trips. **That is slice 19.** The offer
-stands and gets more expensive with every week of real data.
+code — optimistic UI plus fewer round trips. That was slice 19, and it is done.
+**The offer still stands and gets more expensive with every week of real data:**
+slice 19 removed four round trips from a save and hid the rest, but six remain
+and each still costs ~606ms. A closer database would make all six cheap at once,
+and would take `syllabus-units.test.ts` from ~33s to a few seconds.
 
 ---
 
@@ -59,32 +64,55 @@ stands and gets more expensive with every week of real data.
 
 One slice per session (`CLAUDE.md`).
 
-Speed goes first, ahead of the slice whose design is already written. It is the
-one thing wrong with this app that gets noticed every day, and building a
-guided onboarding path on top of a 6.6-second save would mean testing every
-step of that path at 6.6 seconds a press.
+Speed went first, ahead of the slice whose design was already written, so that
+the guided onboarding path would not have to be walked through at 6.6 seconds a
+press. It is done; start at slice 20.
 
-### Slice 19 — Speed
+### Slice 19 — Speed — **DONE** (2026-09-08)
 
-Aadit's own framing: a layer where adding a course updates the UI immediately
-and sends fewer queries. Precisely:
+Both halves were built, because optimistic UI hides latency and only the
+round-trip cuts remove it.
 
-- **Optimistic UI** on the timetable, via React 19's `useOptimistic` and the
-  existing server actions. **No new dependency** (`CLAUDE.md` rule 10).
-- **A failed save must visibly roll the cell back.** This app's entire premise
-  is that the screen never lies about what is current; a cell that looks saved
-  but is not is a cousin of the bug this product exists to prevent.
-- **Cut the redundant round trips.** One save currently calls `getUser()` three
-  times (action, proxy, page) and `ensureWorkspace` twice. `refreshed()`
-  revalidates five paths, forcing a full server re-render to display one new
-  cell.
-- **Move the proxy's `hasProfile` check into the JWT's `app_metadata`**, written
-  when the username is claimed. Slice 18 added that lookup and it costs ~600ms
-  on every navigation; this removes it entirely. Noted in `docs/DECISIONS.md`.
+Optimistic UI: `useOptimistic` in `components/timetable/timetable-grid.tsx`, no
+new dependency. The sheet closes on submit rather than on the database
+answering. An unconfirmed block is drawn faded and is not clickable — its id is
+a `pending:` placeholder, not a `sessions.id`.
 
-Optimistic UI hides the latency; the round-trip cuts remove it. Do both.
+The rollback: the three class actions now return `SaveResult` instead of
+throwing, and a failed save prints one line above the grid naming the day and
+period that is unchanged. The block itself is removed by `useOptimistic`
+reverting to `props.classes` — which is only correct because `applyPending`
+never mutates that array. **That is the slice's invariant and it is the whole of
+the promise**; `lib/timetable.test.ts` proves it.
 
-### Slice 20 — Onboarding
+Round trips removed, counted by `modules/timetable/round-trips.test.ts`:
+
+| | before | after |
+|---|---|---|
+| add a class + a new course | 10 queries | 8 |
+| add a class to an existing course | 8 | 6 |
+| every signed-in request | +1 (`hasProfile`) | 0 |
+| every render of `/timetable` | layout and page both ask | asked once |
+
+- Migration 014 mirrors `has_profile` into `auth.users.raw_app_meta_data` with a
+  trigger on `profiles`, and backfills. The proxy reads it off `getUser()` for
+  free, and still falls back to the query when the claim is absent.
+- `generateMeetings` joins `courses!inner(id)` instead of listing courses and
+  then listing sessions on their ids — two sequential trips became one.
+- `generateRestOfTerm` takes the workspace the action already read instead of
+  fetching the same row by the same id.
+- `lib/session.ts` memoises `currentUser` / `currentWorkspace` with React's
+  `cache()`, so the shell and the page share one answer.
+
+`refreshed()` still revalidates five paths, deliberately: `/timetable` first is
+what makes the fresh grid part of the same POST, which is what lets the
+optimistic block hand over without a flicker. Removing it would reintroduce one.
+
+What was **not** done, and is written up under "Noticed, not fixed": ~28 other
+screens still open with `getUser()` + `ensureWorkspace()` by hand and would each
+be a one-line change to `lib/session.ts`. That is the cheapest ~1.2s left.
+
+### Slice 20 — Onboarding — **NEXT**
 
 **Design: `docs/superpowers/specs/2026-09-08-onboarding-design.md`. Approved.
 Read it in full; it records what was rejected and why.**

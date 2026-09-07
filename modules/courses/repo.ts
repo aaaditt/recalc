@@ -48,6 +48,43 @@ export async function listSessions(
   return (data ?? []).map((row) => sessionSchema.parse(row));
 }
 
+/**
+ * Every weekly pattern in a workspace, in one round trip.
+ *
+ * The obvious way to write this is two queries — the workspace's courses, then
+ * the sessions on those course ids — and that is what `generateMeetings` did
+ * until slice 19. They cannot overlap, because the second needs the first's
+ * answer, so it cost two sequential trips to a database ~606ms away every time
+ * a class was added.
+ *
+ * `courses!inner(id)` is PostgREST's inner join: filter the sessions by a column
+ * on the course they belong to, and let Postgres do the join it was going to do
+ * anyway. `sessions` has no `workspace_id` of its own — it reaches a workspace
+ * only through `courses` — so this is also the only honest way to ask the
+ * question.
+ *
+ * The embedded `courses` key is dropped on the way out: `sessionSchema` is a
+ * plain zod object, which strips what it does not name, so callers get exactly
+ * the `Session` they got before.
+ */
+export async function listSessionsInWorkspace(
+  db: SupabaseClient,
+  workspaceId: string,
+  term?: string
+): Promise<Session[]> {
+  let query = db
+    .from('sessions')
+    .select('*, courses!inner(id)')
+    .eq('courses.workspace_id', workspaceId)
+    .order('weekday', { ascending: true })
+    .order('starts_at', { ascending: true });
+  if (term) query = query.eq('courses.term', term);
+
+  const { data, error } = await query;
+  if (error) throw new Error(`courses.listSessionsInWorkspace: ${error.message}`);
+  return (data ?? []).map((row) => sessionSchema.parse(row));
+}
+
 /** One weekly pattern row by id, or null. */
 export async function findSession(
   db: SupabaseClient,

@@ -2317,6 +2317,106 @@ the change rather than found while looking around.
 
 ---
 
+## 2026-09-08 — The username gate moved into the JWT, and the gate stayed
+Because: it answers a boolean that changes exactly once in an account's life,
+and it was answering it with a network round trip on every signed-in request —
+sequentially after `getUser()`, which is itself a round trip. Migration 014 puts
+`has_profile` in `auth.users.raw_app_meta_data` with an `after insert` trigger on
+`profiles`, and `getUser()` returns it for nothing. This supersedes the
+2026-09-06 entry above: that entry called the JWT "the fix when it comes", and
+this is it. The gate itself is unchanged and still holds on every route.
+Instead of: a cookie (forgeable, and rejected in slice 18 for that reason), or a
+line in `claimUsername` writing `app_metadata` with the admin client — which
+would have meant importing `lib/supabase/admin.ts` into `modules/profiles`, and
+that file imports `server-only`, which throws under Vitest and would have taken
+`username.test.ts` with it. A trigger on a table we own has neither problem and
+cannot drift from the row it mirrors.
+
+## 2026-09-08 — `app_metadata`, never `user_metadata`
+Because: a signed-in client can write its own `user_metadata` through the public
+API. A gate reading a flag from there could be walked straight past by anyone
+with a session and a fetch call. `app_metadata` is writable only by the service
+role and by SQL. This is the whole reason the flag is worth having in a token at
+all rather than being a claim the client asserts.
+Instead of: nothing — there was no second option here, but it is written down
+because the two field names differ by one word and the mistake is silent.
+
+## 2026-09-08 — The proxy still asks the database when the claim is missing
+Because: a token issued before migration 014 ran has no `has_profile` in it, and
+the honest answer to "I don't know" is to go and find out, not to assume yes. The
+fallback costs the old ~606ms, and only for an account the backfill did not
+reach. It is meant to stay: the failure mode of deleting it is a signed-in user
+with no username walking past the one gate this app has.
+Instead of: treating a missing claim as `false`, which would trap an existing
+account on `/welcome` with a username it has already claimed and cannot claim
+again.
+
+## 2026-09-08 — `generateMeetings` reads sessions and courses in one query
+Because: it listed the workspace's courses and then listed the sessions on their
+ids, and the second needs the first's answer, so they could not overlap — two
+sequential ~606ms trips inside every class ever added. `courses!inner(id)` gets
+both in one statement. The course rows turned out never to have been needed: the
+only field ever read off them was `course.id`, and a session carries its own
+`course_id`. `sessions` has no `workspace_id` of its own, so the join is also the
+only honest way to ask the question.
+Instead of: adding `workspace_id` to `sessions`, which would denormalise the one
+table whose reachability rules slices 22 and 23 depend on being awkward.
+
+## 2026-09-08 — `generateRestOfTerm` takes the workspace the caller already has
+Because: every server action on `/timetable` reads the workspace before it does
+anything, and then `generateRestOfTerm` fetched the same row by the same id
+again. The parameter is the row itself rather than a flag, so passing the wrong
+one is not expressible. It is optional and the fallback is tested
+(`round-trips.test.ts`), so this stays an optimisation rather than becoming a
+requirement a future caller can forget and silently break.
+Instead of: making it required, which would have been faster to write and would
+have turned a missed argument into a type error today and a bug in six months.
+
+## 2026-09-08 — `lib/session.ts`, and only three files use it
+Because: every signed-in screen opens with `getUser()` then `ensureWorkspace()`,
+and the shell in `app/(app)/layout.tsx` does it as well as the page inside it —
+two identical auth calls and two identical selects per navigation. `cache()` is
+React's per-request memo, so the first caller pays and the rest are free. It is
+scoped to one request, which is the only property that makes memoising a *user*
+safe. Used in the layout, `/timetable`'s page and its actions, and nowhere else:
+`CLAUDE.md` rule 9 says do not refactor outside the slice, and the other ~28 call
+sites are listed under "Noticed, not fixed" instead.
+Instead of: passing the user down from the layout, which App Router cannot do,
+or trusting a header set by the proxy — which would make every server action's
+auth depend on the proxy matcher never having a hole in it.
+
+## 2026-09-08 — The timetable's class actions return a result; the period actions throw
+Because: the grid now draws a class before the database has confirmed it, so it
+has to be told when to take it back, and a thrown error in a server action
+reaches the nearest error boundary and takes the whole screen down — a strange
+punishment for a room number that would not save. The three class actions return
+`SaveResult`. The period actions still redirect and still throw, because they are
+ordinary forms where a full page turn is the honest thing.
+Instead of: throwing everywhere and adding an error boundary, which would have
+replaced the timetable with an apology at the exact moment the user wanted to see
+which cell had not saved.
+
+## 2026-09-08 — The optimistic reducer lives in `lib/`, not in the component
+Because: this project's test runner collects `lib/**` and `modules/**` and has no
+browser in it, so a rule that lives in a component is a rule with no test. The
+rule is `applyPending` never mutating what it is given — and the whole of "a
+failed save visibly rolls the cell back" rests on it, because `useOptimistic`
+reverts by re-rendering with the base state it was handed. If that array were
+edited in place the grid would revert *to the failure* and sit there showing a
+class the database does not have: confidently wrong, which is the one thing this
+product exists not to be. `lib/timetable.test.ts` is the proof.
+Instead of: adding jsdom and a React testing library to test it in a component —
+a dependency (rule 10) to test arithmetic on a list.
+
+## 2026-09-08 — An unconfirmed class is drawn faded and cannot be clicked
+Because: its id is a `pending:` placeholder rather than a `sessions.id`, so
+opening it would offer to edit a row that does not exist. And a screen that shows
+something as settled while it is still in the air is the small version of the bug
+this app is about. Fading it is not decoration; it is the difference between
+"this is saved" and "this is on its way".
+Instead of: drawing it identically to a saved class, which is what makes most
+optimistic UI feel fast and makes this one dishonest.
+
 ## Noticed, not fixed
 
 Things spotted outside the current slice. Do not fix them mid-slice; write them here.
@@ -2998,3 +3098,24 @@ Things spotted outside the current slice. Do not fix them mid-slice; write them 
   `/settings/*`, `/timetable`, `/timetable/periods` and
   `/courses/<id>/settings`. Slice 16 called this the same complaint as the "one
   needs-you surface" item in SLICES.md, and it is one screen worse this week.
+
+- **~28 screens still open with `getUser()` + `ensureWorkspace()` by hand.**
+  `lib/session.ts` exists and is used by the shell, `/timetable` and its actions;
+  every other page pays two round trips the layout has already paid. Converting
+  them is a one-line change each and was left out of slice 19 on purpose
+  (`CLAUDE.md` rule 9). It is the cheapest remaining ~1.2s in the app.
+- **Whether React's `cache()` is shared between a server action and the re-render
+  it triggers is not documented either way**, and was not measured. The saving
+  that is certain is layout-to-page within one render. If it *is* shared, adding
+  a class is two round trips cheaper again than the count in
+  `round-trips.test.ts` implies.
+- **The whole DB-backed suite failed once, mid-slice, with `fetch failed` at
+  `auth.admin.createUser` in 19 files at once**, and passed on a re-run with no
+  change. Thirty-nine test files start in parallel and each creates a user
+  against the remote auth server; this looks like connection pressure rather than
+  a bug, but it means a red suite here is worth re-running once before it is
+  believed.
+- **`applyPeriodToClasses` still updates sessions one at a time in a loop**, and
+  `reorderSyllabusUnits` still does eight round trips to swap two rows (recorded
+  in slice 18 and unchanged). Both are the same shape as the things slice 19
+  fixed, and both were left alone because they are not the timetable save.

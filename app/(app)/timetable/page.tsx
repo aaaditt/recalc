@@ -12,10 +12,10 @@ import { Card } from '@/components/ui/card';
 import { Field, Input } from '@/components/ui/field';
 import { PageHeader } from '@/components/ui/page-header';
 import { colourForCourse } from '@/lib/course-colours';
+import { currentWorkspace } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import type { TimetableClass } from '@/lib/timetable';
 import { getTimetable } from '@/modules/timetable';
-import { ensureWorkspace } from '@/modules/workspaces';
 
 // The timetable, as periods rather than clock hours — the shape it is written
 // in on paper (last_sem.jpeg).
@@ -34,13 +34,16 @@ export default async function TimetablePage({
 }) {
   const params = await searchParams;
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return null;
+  // Slice 19: the shell in app/(app)/layout.tsx asks these same two questions to
+  // draw the /review badge, and `currentWorkspace` is memoised for the length of
+  // the request — so whichever of the two gets there first pays, and the other
+  // gets the answer for nothing. Two round trips at ~606ms, on every render of
+  // this page and on every re-render after a save.
+  const found = await currentWorkspace();
+  if (!found) return null;
+  const { workspace } = found;
 
-  const workspace = await ensureWorkspace(supabase, user.id);
+  const supabase = await createClient();
   const { periods, courses, sessions } = await getTimetable(supabase, workspace.id);
 
   // Courses come back ordered by code, so one without a colour of its own gets
@@ -155,10 +158,14 @@ export default async function TimetablePage({
           endsAt: period.ends_at,
         }))}
         classes={classes}
+        // The colour comes down with the course because the grid now draws a
+        // block before the server has confirmed it, and a block that arrives
+        // grey and turns indigo a second later is its own small lie.
         courses={courses.map((course) => ({
           id: course.id,
           code: course.code,
           name: course.name,
+          colour: look.get(course.id)?.colour ?? 'indigo',
         }))}
         addClass={addClassAction}
         updateClass={updateClassAction}

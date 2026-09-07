@@ -17,7 +17,15 @@ import { COURSE_COLOURS, courseDot, type CourseColour } from '@/lib/course-colou
 import { cx } from '@/lib/cx';
 import { periodRange, weekdayName, type TimetableClass } from '@/lib/timetable';
 
-export type SheetCourse = { id: string; code: string; name: string };
+// The colour rides along with the course from slice 19: the grid draws a block
+// the moment the form is submitted, and it cannot ask the server what colour
+// that course is on the way past.
+export type SheetCourse = {
+  id: string;
+  code: string;
+  name: string;
+  colour: CourseColour;
+};
 
 /** Which cell is open, and what is already in it. */
 export type OpenCell = {

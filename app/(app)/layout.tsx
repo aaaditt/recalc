@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react';
 
 import { AppNav } from '@/components/app-nav';
+import { currentWorkspace } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { getStaleCount } from '@/modules/recalc';
-import { ensureWorkspace } from '@/modules/workspaces';
 
 // The signed-in shell. /login and /styleguide sit outside this route group on
 // purpose — neither wants navigation.
@@ -21,15 +21,15 @@ import { ensureWorkspace } from '@/modules/workspaces';
 // screen. It is a single indexed `count`, and the actions that change the queue
 // revalidate this layout so the number never lies.
 export default async function AppLayout({ children }: { children: ReactNode }) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
   // Signed out, the proxy is already redirecting; the shell just draws no badge
   // rather than failing on the way there.
-  const staleCount = user
-    ? await getStaleCount(supabase, (await ensureWorkspace(supabase, user.id)).id)
+  //
+  // Slice 19: `currentWorkspace` is memoised for the length of the request, so
+  // the page rendering inside this layout asks the same two questions for free
+  // rather than paying two more round trips for the same answers.
+  const found = await currentWorkspace();
+  const staleCount = found
+    ? await getStaleCount(await createClient(), found.workspace.id)
     : 0;
 
   return (

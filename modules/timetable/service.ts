@@ -202,7 +202,8 @@ export async function applyPeriodToClasses(
   db: SupabaseClient,
   workspaceId: string,
   periodId: string,
-  timeZone: string = localTimeZone()
+  timeZone: string = localTimeZone(),
+  workspace?: Workspace | null
 ): Promise<ApplyPeriodResult> {
   const period = await repo.findPeriod(db, workspaceId, periodId);
   if (!period) {
@@ -222,7 +223,9 @@ export async function applyPeriodToClasses(
   return {
     classes: behind.length,
     generated:
-      behind.length === 0 ? null : await generateRestOfTerm(db, workspaceId, timeZone),
+      behind.length === 0
+        ? null
+        : await generateRestOfTerm(db, workspaceId, timeZone, workspace),
   };
 }
 
@@ -296,9 +299,15 @@ export async function getTimetable(
 async function generateRestOfTerm(
   db: SupabaseClient,
   workspaceId: string,
-  timeZone: string
+  timeZone: string,
+  known?: Workspace | null
 ): Promise<GenerateMeetingsResult | null> {
-  const workspace = await getWorkspace(db, workspaceId);
+  // The caller usually has the workspace already — every server action here
+  // gets it from `ensureWorkspace` before it does anything else — and fetching
+  // it a second time by its own id was a free ~606ms on every class added.
+  // Slice 19. `known` is the row, not a flag: passing the wrong workspace is
+  // impossible because the id it was read by is the one being passed alongside.
+  const workspace = known ?? (await getWorkspace(db, workspaceId));
   if (!workspace?.term_start || !workspace.term_end) return null;
 
   const today = todayIn(timeZone);
@@ -333,7 +342,8 @@ export type ClassChange = {
  */
 export async function addClass(
   db: SupabaseClient,
-  input: AddClassInput
+  input: AddClassInput,
+  workspace?: Workspace | null
 ): Promise<ClassChange> {
   const parsed = addClassInputSchema.parse(input);
   const timeZone = parsed.timeZone ?? localTimeZone();
@@ -373,7 +383,7 @@ export async function addClass(
 
   return {
     session,
-    generated: await generateRestOfTerm(db, parsed.workspaceId, timeZone),
+    generated: await generateRestOfTerm(db, parsed.workspaceId, timeZone, workspace),
   };
 }
 
@@ -388,7 +398,8 @@ export async function addClass(
  */
 export async function updateClass(
   db: SupabaseClient,
-  input: UpdateClassInput
+  input: UpdateClassInput,
+  workspace?: Workspace | null
 ): Promise<ClassChange> {
   const parsed = updateClassInputSchema.parse(input);
   const timeZone = parsed.timeZone ?? localTimeZone();
@@ -414,7 +425,7 @@ export async function updateClass(
 
   return {
     session,
-    generated: await generateRestOfTerm(db, parsed.workspaceId, timeZone),
+    generated: await generateRestOfTerm(db, parsed.workspaceId, timeZone, workspace),
   };
 }
 

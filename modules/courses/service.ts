@@ -775,14 +775,16 @@ export async function generateMeetings(
     );
   }
 
-  const courses = await repo.listCourses(db, parsed.workspaceId, parsed.term);
-  const sessions = await repo.listSessions(
-    db,
-    courses.map((course) => course.id)
-  );
+  // One query, not two. This used to list the workspace's courses and then list
+  // the sessions on their ids — sequential, because the second needs the first's
+  // answer — which is two ~606ms round trips inside every single class added.
+  // `listSessionsInWorkspace` joins them in Postgres instead. Slice 19.
+  //
+  // The course rows themselves were never needed here: the only thing they were
+  // ever read for was `course.id`, and a session already carries its own
+  // `course_id`.
+  const sessions = await repo.listSessionsInWorkspace(db, parsed.workspaceId, parsed.term);
   if (sessions.length === 0) return { created: 0, updated: 0, unchanged: 0 };
-
-  const courseOf = new Map(courses.map((course) => [course.id, course]));
 
   // What the timetable says should exist, keyed by pattern + local day.
   type Wanted = {
@@ -831,11 +833,9 @@ export async function generateMeetings(
     const meeting = existingByKey.get(key);
 
     if (!meeting) {
-      const course = courseOf.get(want.session.course_id);
-      if (!course) continue; // Cannot happen: sessions came from these courses.
       toInsert.push({
         workspace_id: parsed.workspaceId,
-        course_id: course.id,
+        course_id: want.session.course_id,
         session_id: want.session.id,
         starts_at: want.startsAt,
         ends_at: want.endsAt,

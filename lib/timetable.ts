@@ -120,3 +120,124 @@ export function buildGrid(
 
   return { rows, unplaced };
 }
+
+// ---------------------------------------------------------------------------
+// Optimistic edits — slice 19
+// ---------------------------------------------------------------------------
+//
+// Adding a class is eleven sequential round trips to a database in Sydney. Slice
+// 19 removed four of them; the rest are real work — an insert is an insert — and
+// the only honest way to make the remainder feel like nothing is to draw the
+// result before it is confirmed and then be scrupulous about taking it back.
+//
+// The whole reducer lives here rather than in the component for two reasons.
+// One: it is arithmetic on a list, and the component should draw. Two: this
+// project's test runner collects `lib/**` and `modules/**` and has no browser in
+// it, so a rule that lives in a component is a rule with no test — and the rule
+// below is one this product cannot get wrong.
+//
+// THE RULE: `applyPending` never mutates what it is given.
+//
+// React's `useOptimistic` reverts by re-rendering with the base state it was
+// handed. If this function edited that array in place, a failed save would
+// "revert" to an array that already contained the failure, and the grid would
+// sit there showing a class the database does not have. That is the same bug
+// this whole product exists to prevent — a screen that is confidently wrong —
+// wearing a different hat. See lib/timetable.test.ts.
+
+/** Marks a class the screen is showing but the database has not confirmed. */
+export const PENDING_PREFIX = 'pending:';
+
+/** Is this block drawn ahead of its save? */
+export function isPending(item: TimetableClass): boolean {
+  return item.sessionId.startsWith(PENDING_PREFIX);
+}
+
+/**
+ * One edit in flight.
+ *
+ * `add` carries the whole block because the form already knows every field the
+ * grid draws — the course, its colour, the room, the lab flag — so there is
+ * nothing to wait for. `update` carries a patch. `remove` carries an id.
+ */
+export type PendingEdit =
+  | { kind: 'add'; item: TimetableClass }
+  | {
+      kind: 'update';
+      sessionId: string;
+      patch: Partial<Pick<TimetableClass, 'code' | 'name' | 'colour' | 'courseId' | 'room' | 'isLab'>>;
+    }
+  | { kind: 'remove'; sessionId: string };
+
+/**
+ * The grid as it should look with one edit applied, without touching the grid
+ * as it actually is.
+ *
+ * Written as the reducer `useOptimistic` wants: (state, action) -> state.
+ */
+export function applyPending(
+  classes: readonly TimetableClass[],
+  edit: PendingEdit
+): TimetableClass[] {
+  switch (edit.kind) {
+    case 'add':
+      return [...classes, edit.item];
+
+    case 'remove':
+      return classes.filter((item) => item.sessionId !== edit.sessionId);
+
+    case 'update':
+      return classes.map((item) =>
+        item.sessionId === edit.sessionId ? { ...item, ...edit.patch } : item
+      );
+  }
+}
+
+/**
+ * A block drawn before its row exists, built from what the form was given.
+ *
+ * The id is deliberately not a uuid: nothing may ever mistake it for a real
+ * `sessions.id` and try to save against it, and if one of these ever reaches a
+ * server action the error should be loud rather than a silent update of some
+ * other row.
+ */
+export function pendingClass(fields: {
+  periodId: string;
+  weekday: number;
+  courseId: string | null;
+  code: string;
+  name: string;
+  colour: CourseColour;
+  room: string;
+  isLab: boolean;
+  startsAt: string;
+  endsAt: string;
+}): TimetableClass {
+  return {
+    sessionId: `${PENDING_PREFIX}${fields.periodId}|${fields.weekday}`,
+    courseId: fields.courseId ?? `${PENDING_PREFIX}course`,
+    code: fields.code,
+    name: fields.name,
+    colour: fields.colour,
+    room: fields.room.trim() === '' ? null : fields.room.trim(),
+    isLab: fields.isLab,
+    weekday: fields.weekday,
+    startsAt: fields.startsAt,
+    endsAt: fields.endsAt,
+    periodId: fields.periodId,
+  };
+}
+
+/**
+ * What a server action tells the grid.
+ *
+ * The three class actions return this instead of throwing, and the difference
+ * matters: a thrown error in a server action reaches the nearest error boundary
+ * and takes the whole screen with it, which is a strange punishment for a room
+ * number that would not save. A result comes back to the component that asked,
+ * the optimistic block disappears, and one line of text says why.
+ *
+ * `message` is meant to be read by a tired student, so it is a sentence rather
+ * than a Postgres error — but it is never a lie about whether the save happened.
+ */
+export type SaveResult = { ok: true } | { ok: false; message: string };

@@ -12,7 +12,7 @@
 // gets the left-hand period column pinned so you always know which row you are
 // reading.
 
-import { useState, useTransition } from 'react';
+import { useOptimistic, useState, useTransition } from 'react';
 
 import {
   ClassSheet,
@@ -21,12 +21,17 @@ import {
   type SheetCourse,
 } from '@/components/timetable/class-sheet';
 import { courseRail, courseTint } from '@/lib/course-colours';
+import { cx } from '@/lib/cx';
 import {
+  applyPending,
   buildGrid,
   clockLabel,
+  isPending,
+  pendingClass,
   periodRange,
   weekdayName,
   WEEKDAYS,
+  type SaveResult,
   type TimetableClass,
   type TimetablePeriod,
 } from '@/lib/timetable';
@@ -51,28 +56,76 @@ type TimetableGridProps = {
   periods: TimetablePeriod[];
   classes: TimetableClass[];
   courses: SheetCourse[];
-  addClass: (values: AddClassValues) => Promise<void>;
-  updateClass: (values: UpdateClassValues) => Promise<void>;
-  removeClass: (sessionId: string) => Promise<void>;
+  addClass: (values: AddClassValues) => Promise<SaveResult>;
+  updateClass: (values: UpdateClassValues) => Promise<SaveResult>;
+  removeClass: (sessionId: string) => Promise<SaveResult>;
 };
 
 export function TimetableGrid(props: TimetableGridProps) {
   const [cell, setCell] = useState<OpenCell | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
-  const { rows, unplaced } = buildGrid(props.periods, props.classes);
+  // Slice 19. The grid drawn here is the saved grid plus whatever is in flight.
+  //
+  // `useOptimistic` reverts by re-rendering with `props.classes` — the list the
+  // server last sent — so a save that fails takes its block off the screen with
+  // no work from us, provided `applyPending` never edited that list. It does not,
+  // and lib/timetable.test.ts is the proof; that test is the reason this is safe
+  // to do on the one screen whose whole job is to be right.
+  const [drawn, addPending] = useOptimistic(props.classes, applyPending);
+  const { rows, unplaced } = buildGrid(props.periods, drawn);
 
   function onSave(open: OpenCell, values: ClassFormValues) {
+    // The sheet closes now, not when the database answers. That is the change:
+    // eleven round trips to Sydney used to happen behind an open form.
+    setCell(null);
+    setFailure(null);
+
     startTransition(async () => {
+      let result: SaveResult;
+
       if (open.existing) {
-        await props.updateClass({
+        const course = props.courses.find((item) => item.id === values.courseId);
+        addPending({
+          kind: 'update',
+          sessionId: open.existing.sessionId,
+          patch: {
+            room: values.room.trim() === '' ? null : values.room.trim(),
+            isLab: values.isLab,
+            ...(course
+              ? { courseId: course.id, code: course.code, name: course.name, colour: course.colour }
+              : {}),
+          },
+        });
+
+        result = await props.updateClass({
           sessionId: open.existing.sessionId,
           room: values.room,
           isLab: values.isLab,
           courseId: values.courseId,
         });
       } else {
-        await props.addClass({
+        // Everything the block needs to be drawn is already in the form: which
+        // course, its colour, the room, the lab flag, and the period's own times.
+        const course = props.courses.find((item) => item.id === values.courseId);
+        addPending({
+          kind: 'add',
+          item: pendingClass({
+            periodId: open.periodId,
+            weekday: open.weekday,
+            courseId: values.courseId,
+            code: course?.code ?? values.newCourse?.code ?? '—',
+            name: course?.name ?? values.newCourse?.name ?? '',
+            colour: course?.colour ?? values.newCourse?.colour ?? 'indigo',
+            room: values.room,
+            isLab: values.isLab,
+            startsAt: open.periodStartsAt,
+            endsAt: open.periodEndsAt,
+          }),
+        });
+
+        result = await props.addClass({
           periodId: open.periodId,
           weekday: open.weekday,
           courseId: values.courseId,
@@ -81,23 +134,58 @@ export function TimetableGrid(props: TimetableGridProps) {
           isLab: values.isLab,
         });
       }
-      setCell(null);
+
+      // The block is already gone by the time this runs — the transition ending
+      // is what removes it. All that is left is to say so, and to say where.
+      if (!result.ok) {
+        setFailure(
+          `${result.message} ${weekdayName(open.weekday).long}, ${open.periodLabel} period is unchanged.`
+        );
+      }
     });
   }
 
   function onRemove(open: OpenCell) {
     if (!open.existing) return;
     const sessionId = open.existing.sessionId;
+    const where = `${weekdayName(open.weekday).long}, ${open.periodLabel} period`;
+
+    setCell(null);
+    setFailure(null);
+
     startTransition(async () => {
-      await props.removeClass(sessionId);
-      setCell(null);
+      addPending({ kind: 'remove', sessionId });
+      const result = await props.removeClass(sessionId);
+      if (!result.ok) setFailure(`${result.message} ${where} is unchanged.`);
     });
   }
 
   return (
     <>
+      {/* A save that did not happen. It sits above the grid rather than inside
+          the cell, because the cell has already gone back to how it was and
+          there is nothing left there to attach a message to. */}
+      {failure ? (
+        <div
+          role="alert"
+          className="mb-3 flex items-start gap-3 rounded-card bg-accent-bg px-4 py-3 text-14 text-accent"
+        >
+          <span className="flex-1">{failure}</span>
+          <button
+            type="button"
+            onClick={() => setFailure(null)}
+            className="shrink-0 text-13 underline underline-offset-4"
+          >
+            Dismiss
+          </button>
+        </div>
+      ) : null}
+
       {/* The one element allowed to scroll sideways. */}
-      <div className="overflow-x-auto rounded-card border border-border bg-surface">
+      <div
+        aria-busy={pending}
+        className="overflow-x-auto rounded-card border border-border bg-surface"
+      >
         <div
           className="grid min-w-max"
           style={{
@@ -207,12 +295,22 @@ function Cell({
   return (
     <div className="flex min-h-(--timetable-row-height) flex-col gap-(--block-gap) border-b border-l border-line p-1">
       {classes.map((item) => (
+        // A block that has not been confirmed yet is drawn faded and cannot be
+        // clicked. Both matter: its id is a placeholder rather than a
+        // `sessions.id`, so opening it would offer to edit a row that does not
+        // exist — and this app does not get to show something as settled while
+        // it is still in the air.
         <button
           key={item.sessionId}
           type="button"
+          disabled={isPending(item)}
+          aria-busy={isPending(item) || undefined}
           onClick={() => onOpen(item)}
           style={{ ...courseRail(item.colour), ...courseTint(item.colour) }}
-          className="flex flex-1 flex-col items-start justify-center gap-0.5 rounded-block px-(--block-pad-inline) py-(--block-pad-block) text-left transition-opacity duration-100 hover:opacity-80"
+          className={cx(
+            'flex flex-1 flex-col items-start justify-center gap-0.5 rounded-block px-(--block-pad-inline) py-(--block-pad-block) text-left transition-opacity duration-100',
+            isPending(item) ? 'opacity-50' : 'hover:opacity-80'
+          )}
         >
           <span className="flex w-full items-center gap-1">
             <span className="min-w-0 flex-1 truncate font-mono text-12 font-medium">
