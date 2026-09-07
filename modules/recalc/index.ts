@@ -33,6 +33,8 @@ export {
   type RunOptions,
 } from './worker';
 export {
+  countSummaries,
+  countSummariesEverStale,
   getFailedDerivations,
   getStaleCount,
   getStaleDerivations,

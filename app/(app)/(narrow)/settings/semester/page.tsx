@@ -47,6 +47,17 @@ export default async function SemesterPage({
             {/* The way in to slice 10's screen. The bottom nav is full at five
                 columns (docs/DECISIONS.md), so settings screens link to each
                 other rather than growing a sixth destination. */}
+            {/* Slice 20's guided path. It has no nav entry — `AppNav` renders
+                on every page, so a link there would read onboarding state on
+                every navigation, ~606ms each against this database — so this is
+                where it lives permanently, and it is how somebody who dismissed
+                it gets it back. */}
+            <Link
+              href="/start"
+              className="text-13 text-muted underline-offset-4 hover:text-ink hover:underline"
+            >
+              Set up
+            </Link>
             <Link
               href="/settings/agents"
               className="text-13 text-muted underline-offset-4 hover:text-ink hover:underline"

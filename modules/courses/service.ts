@@ -70,6 +70,23 @@ export async function getSyllabusUnits(
 }
 
 /** Every weekly pattern row for this workspace's courses. What /timetable draws. */
+/**
+ * Every weekly slot in a workspace, in ONE query.
+ *
+ * The same answer as `getSessions` below, which reaches it in two: the courses,
+ * and then the sessions on their ids. That one is left as it is — slice 20 is
+ * not a licence to change what every existing caller does — but a screen that
+ * only wants to know whether the number is zero should not stop and wait twice
+ * at ~606ms to find out. See `repo.listSessionsInWorkspace` (slice 19).
+ */
+export async function getSessionsInWorkspace(
+  db: SupabaseClient,
+  workspaceId: string,
+  term?: string
+): Promise<Session[]> {
+  return repo.listSessionsInWorkspace(db, workspaceId, term);
+}
+
 export async function getSessions(
   db: SupabaseClient,
   workspaceId: string,

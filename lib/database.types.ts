@@ -334,6 +334,7 @@ export type Database = {
           model: string
           prompt_version: number
           recipe: string
+          stale_runs: number
           status: string
           workspace_id: string
         }
@@ -345,6 +346,7 @@ export type Database = {
           model: string
           prompt_version?: number
           recipe: string
+          stale_runs?: number
           status?: string
           workspace_id: string
         }
@@ -356,6 +358,7 @@ export type Database = {
           model?: string
           prompt_version?: number
           recipe?: string
+          stale_runs?: number
           status?: string
           workspace_id?: string
         }
@@ -660,6 +663,7 @@ export type Database = {
           created_at: string
           display_name: string | null
           id: string
+          onboarding_dismissed_at: string | null
           updated_at: string
           username: string
         }
@@ -667,6 +671,7 @@ export type Database = {
           created_at?: string
           display_name?: string | null
           id: string
+          onboarding_dismissed_at?: string | null
           updated_at?: string
           username: string
         }
@@ -674,6 +679,7 @@ export type Database = {
           created_at?: string
           display_name?: string | null
           id?: string
+          onboarding_dismissed_at?: string | null
           updated_at?: string
           username?: string
         }

@@ -13,10 +13,12 @@ export {
   claimUsername,
   getProfile,
   hasProfile,
+  isOnboardingDismissed,
   isValidUsername,
   lookupByUsername,
   normaliseUsername,
   setDisplayName,
+  setOnboardingDismissed,
   usernameProblem,
 } from './service';
 export {

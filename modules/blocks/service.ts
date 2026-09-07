@@ -6,6 +6,7 @@ import {
   updateBlockInputSchema,
   type Block,
   type BlockContent,
+  type BlockType,
   type CreateBlockInput,
   type UpdateBlockInput,
 } from './schema';
@@ -180,4 +181,16 @@ export async function getChildBlocks(
 /** Several blocks by id, in no particular order. */
 export async function getBlocks(db: SupabaseClient, ids: string[]): Promise<Block[]> {
   return repo.listByIds(db, ids);
+}
+
+/**
+ * How many live blocks of one type this workspace has. Counted in the database,
+ * so nothing is fetched to be measured.
+ */
+export async function countBlocks(
+  db: SupabaseClient,
+  workspaceId: string,
+  type: BlockType
+): Promise<number> {
+  return repo.countByType(db, workspaceId, type);
 }

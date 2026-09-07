@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { blockSchema, type Block } from './schema';
+import { blockSchema, type Block, type BlockType } from './schema';
 
 // The only file that touches the blocks table. Nothing here decides *what* to
 // write — version and hash rules live in service.ts.
@@ -123,4 +123,27 @@ export async function maxPosition(
   const { data, error } = await query.maybeSingle();
   if (error) throw new Error(`blocks.maxPosition: ${error.message}`);
   return data ? Number(data.position) : 0;
+}
+
+/**
+ * How many live blocks of one type this workspace has.
+ *
+ * `head: true` with an exact count, so the rows never travel — the caller only
+ * ever wants to know whether the number is zero. Slice 20 asks it about
+ * `type = 'note'`, which is the cheapest possible form of "has this person
+ * written anything yet".
+ */
+export async function countByType(
+  db: SupabaseClient,
+  workspaceId: string,
+  type: BlockType
+): Promise<number> {
+  const { count, error } = await db
+    .from('blocks')
+    .select('id', { count: 'exact', head: true })
+    .eq('workspace_id', workspaceId)
+    .eq('type', type)
+    .is('deleted_at', null);
+  if (error) throw new Error(`blocks.countByType: ${error.message}`);
+  return count ?? 0;
 }

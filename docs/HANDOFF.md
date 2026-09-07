@@ -28,11 +28,17 @@ the "Continue with Google" button on `/login` (slice 18).
 `docs/SLICE_18_SETUP.md` §5. Needs step 1 done first, because it reuses the
 same client ID and secret.
 
-### 3. Nothing — slices 18 and 19 are green
+### 3. Nothing — slices 18, 19 and 20 are green
 
-Slice 18 is committed at `e1710b9`. Slice 19 is built with `npm run check`
-passing on all 449 tests and `npm run build` clean. Migration 014 is applied to
-the remote database and the backfill has run.
+Slice 18 is at `e1710b9` and slice 19 at `a5df597`. Slice 20 is built with
+`npm run check` passing on all 464 tests and `npm run build` clean. Migrations
+014 and 015 are applied to the remote database and both backfills have run.
+
+**Worth doing by hand once:** open `/start` and walk it. Steps 1–4 can be done
+for real. Steps 6 and 7 cannot be finished without an AI key, and they will
+correctly say `blocked` until one is in `/settings/agents` — which is the same
+key `docs/GOOGLE_SETUP.md` does *not* unblock, and is a separate ~2 minutes at
+`/settings/agents` with an Anthropic or OpenAI key.
 
 ---
 
@@ -66,7 +72,7 @@ One slice per session (`CLAUDE.md`).
 
 Speed went first, ahead of the slice whose design was already written, so that
 the guided onboarding path would not have to be walked through at 6.6 seconds a
-press. It is done; start at slice 20.
+press. Slices 19 and 20 are both done; start at slice 21.
 
 ### Slice 19 — Speed — **DONE** (2026-09-08)
 
@@ -112,21 +118,54 @@ What was **not** done, and is written up under "Noticed, not fixed": ~28 other
 screens still open with `getUser()` + `ensureWorkspace()` by hand and would each
 be a one-line change to `lib/session.ts`. That is the cheapest ~1.2s left.
 
-### Slice 20 — Onboarding — **NEXT**
+### Slice 20 — Onboarding — **DONE** (2026-09-08)
 
-**Design: `docs/superpowers/specs/2026-09-08-onboarding-design.md`. Approved.
-Read it in full; it records what was rejected and why.**
+`/start`: seven steps in two acts, one at a time, each one a real action on a
+real screen. Progress is derived on every render and stored nowhere. The module
+owns no table. `components/onboarding/first-run.tsx`, `lib/first-run.ts` and
+`app/(app)/(narrow)/today/actions.ts` are deleted.
 
-A guided path at `/start`, one step at a time, that teaches by having the user
-do the real thing on the real screen. Two acts split by a prerequisite (Act 2
-needs an AI key), every step skippable, progress derived from real data and
-never stored. Replaces `components/onboarding/first-run.tsx`.
+**Two deviations from the design, both in `docs/DECISIONS.md`.**
 
-The trap, and the slice's invariant: step 7's predicate must key on
-`blocks.version > 1`, not on "something is stale" — otherwise accepting the diff
-in `/review` un-ticks the step at the exact moment the user did the right thing.
+**1. The migration is 015, not 014.** Slice 19 was built first and took 014. The
+design document still says 014; the ledger is what ran.
 
-### Slice 21 — Just-in-time hints
+**2. Step 7 keys on `derivations.stale_runs`, not on `blocks.version > 1`.**
+This is the important one. The design named one trap in step 7 and there was a
+second one underneath it:
+
+> `blocks.version > 1` is already true **before** anything is summarised. The
+> note editor autosaves a second after the last keystroke
+> (`components/notes/note-editor.tsx`) and `updateBlock` bumps the version
+> whenever the content hash moves, so a note written in two sittings reaches
+> version 2 on its own. Measured: a paragraph typed, paused over and continued
+> came back at version 2 with no summary in existence. Step 7 would have ticked
+> alongside step 6 and the guided path would have silently skipped the one
+> lesson this product exists to teach.
+
+The two other no-migration candidates fail for the design's own stated reason —
+`status = 'stale'` un-ticks on accept, and `derivation_sources.source_version`
+is reset by `replaceSources`, which both `acceptPreview` and `keepOldVersion`
+call. So migration 015 adds `derivations.stale_runs`, incremented by
+`mark_derivations_stale()` on the fresh→stale transition and by nothing else.
+It only ever increases and nothing in `/review` touches it.
+
+**That trigger is the product**, so it was replaced with one line added inside
+the existing `where d.status = 'fresh'` guard — which is also what makes the
+number a count of *transitions* rather than of statements — and the four
+staleness suites (31 tests) were run against it before anything else was built.
+
+`modules/onboarding/progress.test.ts` has 15 tests. Two matter most: step 7
+stays ticked after `keepOldVersion` resolves the stale summary in `/review`
+(THE invariant), and step 7 does **not** tick merely because the note was typed
+in two sittings (the regression guard for the bug above).
+
+Also here: skipping a step is `/start?step=<id>` rather than a stored flag;
+`/start` has no nav entry (a link in `AppNav` would read onboarding state on
+every navigation, ~606ms each) and is reached from one line on `/today` while
+Act 1 is unfinished, plus a permanent link on `/settings/semester`.
+
+### Slice 21 — Just-in-time hints — **NEXT**
 
 The other half of what Aadit asked for under "onboarding": each feature explains
 itself the first time it becomes useful, rather than being narrated at an empty
@@ -134,7 +173,9 @@ screen on day one. One dismissible line, in the neutral palette, in the shape
 `components/today/setup-agents.tsx` already uses.
 
 Triggers must read data the screen already has, or this reintroduces the round
-trips slice 19 just removed. Storage: a dismissed-ids column on `profiles`.
+trips slice 19 just removed. Storage: a dismissed-ids column on `profiles` —
+which now has `onboarding_dismissed_at` beside it, from slice 20, and the two
+should probably not end up as two unrelated mechanisms for the same idea.
 
 ### Slice 22 — Friends
 

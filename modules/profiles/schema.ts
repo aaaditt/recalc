@@ -114,6 +114,12 @@ export const profileSchema = z.object({
   display_name: z.string().nullable(),
   created_at: z.string(),
   updated_at: z.string(),
+  // Slice 20. When this account said it was done with the guided setup path.
+  // Null means "not dismissed", which is the state every account starts in.
+  // It lives on the person rather than in a cookie because "I am done with
+  // this" is not a fact about a browser — the cookie it replaces said the wrong
+  // thing the moment you opened the app on a phone.
+  onboarding_dismissed_at: z.string().nullable(),
 });
 
 /**

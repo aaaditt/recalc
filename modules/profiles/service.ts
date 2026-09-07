@@ -119,3 +119,37 @@ export function usernameProblem(raw: string): string | null {
 }
 
 export { normaliseUsername };
+
+/**
+ * Put the guided setup path away, or bring it back.
+ *
+ * `modules/onboarding` owns the steps but owns no table, so this pair lives
+ * here: `profiles` belongs to this module and CLAUDE.md's Never rule 2 says only
+ * a module's own repo touches its tables.
+ */
+export async function setOnboardingDismissed(
+  db: SupabaseClient,
+  userId: string,
+  dismissed: boolean
+): Promise<Profile> {
+  return repo.updateOnboardingDismissed(
+    db,
+    userId,
+    dismissed ? new Date().toISOString() : null
+  );
+}
+
+/**
+ * Has this account put the setup path away?
+ *
+ * False for an account with no profile at all. That state lasts exactly one page
+ * load — the one between signing in for the first time and the welcome screen —
+ * and "they have not dismissed it" is the truthful answer during it.
+ */
+export async function isOnboardingDismissed(
+  db: SupabaseClient,
+  userId: string
+): Promise<boolean> {
+  const profile = await repo.findByUserId(db, userId);
+  return profile?.onboarding_dismissed_at != null;
+}

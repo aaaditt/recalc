@@ -2417,6 +2417,110 @@ this app is about. Fading it is not decoration; it is the difference between
 Instead of: drawing it identically to a saved class, which is what makes most
 optimistic UI feel fast and makes this one dishonest.
 
+## 2026-09-08 — Step 7 keys on `derivations.stale_runs`, not on `blocks.version`
+Because: the approved design chose `version > 1` on a source block, and it is
+true *before* anything is summarised. The note editor autosaves a second after
+the last keystroke and `updateBlock` bumps the version whenever the content hash
+moves, so a note written in two sittings is at version 2 on its own. Measured,
+not reasoned: a paragraph typed, paused over, and continued came back at version
+2 with no summary in existence. Step 7 would have ticked alongside step 6, and
+the guided path would have silently skipped the one lesson this product exists
+to teach. Migration 015 adds a counter incremented by the staleness trigger on
+the fresh→stale transition, and the step reads that.
+Instead of: three predicates that all fail the design's own test. `status =
+'stale'` un-ticks when the diff is accepted — the trap the design names.
+`derivation_sources.source_version` versus the block's current version is exact
+at the moment of the edit and is then reset by `replaceSources`, which both
+`acceptPreview` and `keepOldVersion` call — the same trap wearing a hat. The
+summary block's own `version > 1` never un-ticks but only fires after
+*accepting*, and "Keep the old version" leaves it at 1 for ever.
+
+## 2026-09-08 — The staleness trigger was replaced to add one line
+Because: `stale_runs` has to be incremented by whatever marks a derivation
+stale, and that is `mark_derivations_stale()` — a Postgres trigger, deliberately,
+so that any path that bumps a version fires the same cascade. A counter
+maintained anywhere else would be a counter that misses the Supabase table
+editor. The `where d.status = 'fresh'` guard is untouched, which is what makes
+the number a count of *transitions*: a derivation already stale is not matched
+and cannot be incremented twice by one edit.
+Instead of: leaving the trigger alone and deriving the count elsewhere. There is
+nowhere else — no table records that a derivation used to be stale. This is the
+one change in this slice that could break the product rather than a screen, so
+`staleness.test.ts`, `answer-staleness.test.ts`, `tiptap-staleness.test.ts` and
+`search-staleness.test.ts` were run against the replaced trigger before anything
+was built on top of it, and all 31 passed.
+
+## 2026-09-08 — Skipping a step is a link, not a write
+Because: the design listed a `skipStepAction`, and there is nothing for it to
+write. Which step you are *looking at* is a fact about this page view; whether a
+step is *done* is a fact about the database. Putting the first in the URL
+(`/start?step=<id>`) keeps "progress is derived, never stored" true with no
+exception, makes the back button work, and makes a skipped step come back on its
+own next visit — which is what "every step can be returned to" has to mean when
+nothing is recorded. `?step=` is parsed with `stepIdSchema`, so an unknown value
+falls back to wherever the user actually is.
+Instead of: a `skipped_steps` array on `profiles`, which would have been the
+first stored progress in a design whose central claim is that there is none.
+
+## 2026-09-08 — `modules/onboarding` owns no table
+Because: every tick is computed from courses, sessions, notes, agent roles and
+derivations that already exist. A stored "step 3 is done" can disagree with the
+world; this cannot, and deleting your only course correctly un-ticks step 2 with
+no repair job to write. The one stored fact is "I am done with this", and it
+lives on `profiles` and is read and written through `modules/profiles` —
+CLAUDE.md's Never rule 2, only a module's own repo touches its tables.
+Instead of: an `onboarding_progress` table, which would have needed writing at
+seven call sites scattered across the app and would have been wrong the first
+time one of them was missed.
+
+## 2026-09-08 — Onboarding dismissal is a column, replacing a cookie
+Because: `FIRST_RUN_COOKIE` had a bug nobody had hit yet — dismissing the setup
+card on a laptop left it showing on the phone. "I am done with this" is a fact
+about a person, not about a browser. Slice 18 gave every account a `profiles`
+row, so there is somewhere to put it now that there was not before. A nullable
+timestamp rather than a boolean, because "when did they decide" is worth being
+able to answer and `is not null` is the flag.
+Instead of: keeping the cookie. It was the right call in slice 17 — it did not
+deserve a migration then, and this slice was having one anyway.
+
+## 2026-09-08 — `/start` has no nav entry, and that is a measurement
+Because: `components/app-nav.tsx` renders on every page in the signed-in shell,
+so a link there means reading onboarding state on every navigation — ~606ms
+against this database, permanently, for a link that matters for about two days.
+Instead there is one line on `/today` while Act 1 is unfinished, and a permanent
+link from `/settings/semester` so it is never lost.
+Instead of: a nav entry, which would also have made the nav six columns wide —
+the thing slice 13 decided against and four "Noticed, not fixed" entries have
+been complaining about since.
+
+## 2026-09-08 — `getProgress` is one `Promise.all`, and rides inside `/today`'s
+Because: it asks eight questions, and eight sequential round trips at ~606ms is
+nearly five seconds to draw a checklist. Asked together it is one. On `/today` it
+is placed *inside* that page's existing batch rather than after it, so the screen
+opened every morning pays nothing extra at all — slice 19's lesson, applied the
+day after slice 19. `countBlocks` and `getSessionsInWorkspace` were added so that
+"has this person written a note" and "is there a class" are one query each rather
+than a list fetched to be measured.
+Instead of: calling `listNotes(...).length > 0`, which assembles every lecture
+note and every standalone note and reads their blocks to answer a question whose
+only interesting value is zero.
+
+## 2026-09-08 — Three states per step, not a boolean
+Because: an Act 2 step with no `deep` role is not "not done yet", it is "you
+cannot do this from here". The screen says what is missing and offers the one
+thing that would unblock it, instead of a button that goes nowhere. "Add a
+model" is never blocked — it is what does the unblocking.
+Instead of: hiding Act 2 until a key exists, which would have made the path look
+four steps long and hidden the reason the app is worth having.
+
+## 2026-09-08 — Migration 015, not 014 as the design says
+Because: the onboarding design was written on 2026-09-08 when 014 was free, and
+slice 19 was built first and took it. The design document still says 014. Noted
+here rather than edited into the design, because a spec is a record of what was
+decided and the migration ledger is a record of what ran.
+Instead of: renumbering slice 19's migration, which is applied and therefore
+frozen.
+
 ## Noticed, not fixed
 
 Things spotted outside the current slice. Do not fix them mid-slice; write them here.
@@ -3119,3 +3223,22 @@ Things spotted outside the current slice. Do not fix them mid-slice; write them 
   `reorderSyllabusUnits` still does eight round trips to swap two rows (recorded
   in slice 18 and unchanged). Both are the same shape as the things slice 19
   fixed, and both were left alone because they are not the timetable save.
+- **`getSessions` still reaches the sessions of a workspace in two queries.**
+  `getSessionsInWorkspace` does it in one and was added in this slice for
+  `getProgress`; every existing caller of `getSessions` was left alone
+  (`CLAUDE.md` rule 9). They are the same answer, and one of them costs ~606ms
+  more than the other.
+- **`/today` asks for `fast` and `/start` asks for `deep`.** The agents strip on
+  `/today` checks the `fast` role; step 5 of the guided path checks `deep`,
+  because `modules/recalc/recipes/summarize.ts` asks for `deep`. Both are right
+  about their own question and the screen reads as inconsistent anyway. The
+  design noticed this and left it; so did this slice.
+- **Nothing in the app has ever produced a real summary**, so step 6 and step 7
+  of the guided path have been proved against the real database and the real
+  trigger with derivation rows written directly — exactly as
+  `staleness.test.ts` does — and never against a real model. Unchanged from
+  slice 18's note, and now it is on the critical path of the onboarding
+  experience rather than only of `/review`.
+- **`stale_runs` is not shown anywhere.** It is a real fact about a derivation —
+  "this has gone out of date four times" is worth knowing on `/review` — and it
+  is currently read by one predicate in one module.

@@ -181,3 +181,58 @@ to work one-handed on a phone.
 - Friends and timetable comparison shift to slices 22 and 23.
 - Nothing here touches the staleness engine, and
   `modules/recalc/staleness.test.ts` must still pass untouched.
+
+---
+
+## Amendment — 2026-09-08, written while building it
+
+Two things in the document above are no longer what shipped. The design is left
+as it was written; this section is what actually ran.
+
+### The migration is `015_onboarding.sql`, not `014`
+
+Slice 19 (Speed) was built first and took 014.
+
+### Step 7 keys on `derivations.stale_runs`, not on `blocks.version > 1`
+
+**The section "Progress is derived, never stored" names one trap and there is a
+second one underneath it.**
+
+`blocks.version > 1` is true *before* anything is summarised. The note editor
+autosaves one second after the last keystroke, and `updateBlock` bumps the
+version whenever the normalised content hash changes — so a note written in more
+than one sitting is at version 2 on its own, with no summary in existence.
+
+Measured rather than argued: a paragraph typed, paused over for a second, and
+then continued came back at `version 2`. Step 7 would have ticked at the same
+moment as step 6, and the guided path would have skipped the summarise → edit →
+stale sequence entirely — the one thing it exists to show.
+
+The two other predicates available without a migration both fail for the
+document's own stated reason:
+
+| Predicate | Fails because |
+|---|---|
+| `status = 'stale'` | Un-ticks when the diff is accepted. The trap the design already names. |
+| current version vs `derivation_sources.source_version` | Exactly right at the moment of the edit, then reset by `replaceSources` — which **both** `acceptPreview` and `keepOldVersion` call. The same trap in a different disguise. |
+| the summary block's own `version > 1` | Never un-ticks, but only fires after *accepting*. "Keep the old version" leaves it at 1 for ever. |
+
+So migration 015 adds `derivations.stale_runs int not null default 0`, and
+`mark_derivations_stale()` was replaced to increment it in the same `update`,
+inside the existing `where d.status = 'fresh'` guard — which is what makes it a
+count of *transitions* rather than of statements. It only ever increases, and
+nothing in `/review` touches it.
+
+Step 7 is now: **a `summarize` derivation in this workspace has `stale_runs > 0`.**
+
+The four staleness suites were run against the replaced trigger before anything
+was built on top of it. `modules/onboarding/progress.test.ts` tests both halves:
+that step 7 survives `/review`, and that it does *not* tick merely because a note
+was typed in two sittings.
+
+### `skipStepAction` does not exist
+
+Skipping is a link to `/start?step=<id>`. Which step you are looking at is a fact
+about the page view, not about the account, so nothing is stored — which keeps
+"progress is derived, never stored" true with no exception, and makes the back
+button behave.

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import * as repo from './repo';
+import { SUMMARIZE } from './recipes/summarize';
 import type { Derivation } from './schema';
 
 // The stale queue — read only.
@@ -54,4 +55,38 @@ export async function getFailedDerivations(
   workspaceId: string
 ): Promise<Derivation[]> {
   return repo.listByStatus(db, workspaceId, 'error');
+}
+
+// ---------------------------------------------------------------------------
+// Two questions the guided setup path asks — slice 20
+// ---------------------------------------------------------------------------
+//
+// Both are workspace-wide counts rather than lookups by note id, and that is
+// deliberate. `/start`'s copy says "that note", meaning the one written a step
+// earlier, but the predicate says *any*: a user who summarises a different note
+// has done the thing the step teaches, and a predicate pinned to one block id
+// would leave them stuck on a step they have already completed.
+
+/** Has anything in this workspace ever been summarised? */
+export async function countSummaries(
+  db: SupabaseClient,
+  workspaceId: string
+): Promise<number> {
+  return repo.countByRecipe(db, workspaceId, SUMMARIZE);
+}
+
+/**
+ * Has a summary in this workspace ever gone stale?
+ *
+ * THE question of the whole product, asked as a number. It is not
+ * `getStaleCount() > 0`: that goes back to zero the moment the diff is accepted
+ * in /review — the correct action, and the one the guided path was teaching — so
+ * a step keyed on it would un-tick itself at the exact moment the user
+ * succeeded. `stale_runs` only ever increases. See migration 015.
+ */
+export async function countSummariesEverStale(
+  db: SupabaseClient,
+  workspaceId: string
+): Promise<number> {
+  return repo.countByRecipeEverStale(db, workspaceId, SUMMARIZE);
 }

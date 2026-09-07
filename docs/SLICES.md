@@ -25,15 +25,20 @@ column as you go — this is how a fresh session knows where we are.
 | 17 | **Semester setup** — first-run steps, course settings, syllabus editing, period editor | done |
 | 18 | **Identity** — usernames, the welcome gate, Google sign-in | done |
 | 19 | **Speed** — optimistic UI, and fewer round trips per save | done |
-| 20 | **Onboarding** — `/start`, a guided path that teaches by doing | designed, not built |
+| 20 | **Onboarding** — `/start`, a guided path that teaches by doing | done |
 | 21 | Just-in-time hints — a feature explains itself when it becomes useful | not started |
 | 22 | Friends — requests, accept/decline, per-friend visibility | not started |
 | 23 | Compare — one friend's free/busy or detail, beside yours | not started |
 | ?? | All-day timetable — a 12am–12am day holding named blocks | **not designed** |
 
-Slice 20 has an approved design at
-`docs/superpowers/specs/2026-09-08-onboarding-design.md`. Read it before
-building; it records what was rejected as well as what was chosen.
+Slice 20's design is at
+`docs/superpowers/specs/2026-09-08-onboarding-design.md`. It is built, with two
+deviations recorded in `docs/DECISIONS.md`: the migration is 015 rather than 014
+(slice 19 took 014), and step 7 keys on `derivations.stale_runs` rather than on
+`blocks.version > 1`, because the version predicate was measured to be true
+*before* anything is summarised — the editor autosaves and a note written in two
+sittings is at version 2 on its own. It would have ticked itself and skipped the
+lesson.
 
 Speed came first, ahead of the slice whose design is already written, on
 purpose. It was the one thing wrong with this app that got noticed every single

@@ -1,9 +1,7 @@
-import { cookies } from 'next/headers';
 import type { ReactNode } from 'react';
 
-import { skipFirstRunAction } from './actions';
 import { toggleTaskDoneAction } from '../tasks/actions';
-import { FirstRun } from '@/components/onboarding/first-run';
+import { FinishSetupLine } from '@/components/onboarding/finish-setup-line';
 import { ClassRow } from '@/components/today/class-row';
 import { SetUpAgentsStrip } from '@/components/today/setup-agents';
 import { StudyStrip } from '@/components/today/study-strip';
@@ -12,7 +10,6 @@ import { Card, CardDivider } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageHeader } from '@/components/ui/page-header';
 import { colourForCourse, type CourseColour } from '@/lib/course-colours';
-import { FIRST_RUN_COOKIE } from '@/lib/first-run';
 import { formatMinutes } from '@/lib/study';
 import { createClient } from '@/lib/supabase/server';
 import {
@@ -31,8 +28,8 @@ import {
   groupTasksByDay,
 } from '@/lib/today';
 import { hasAgentRole } from '@/modules/agents';
-import { getCourses, getMeetingsOnDate, getSessions } from '@/modules/courses';
-import { getGoogleAccount } from '@/modules/google';
+import { getCourses, getMeetingsOnDate } from '@/modules/courses';
+import { getProgress, shouldOfferSetup } from '@/modules/onboarding';
 import { getMinutesOnDate, getMinutesThisWeek } from '@/modules/study';
 import { getOverdueTasks, getTasksDueBetween, type Task } from '@/modules/tasks';
 import { ensureWorkspace } from '@/modules/workspaces';
@@ -131,7 +128,7 @@ export default async function TodayPage() {
     minutesToday,
     minutesThisWeek,
     hasFastModel,
-    googleAccount,
+    progress,
   ] = await Promise.all([
       getCourses(supabase, workspace.id),
       getMeetingsOnDate(supabase, workspace.id, today, zone),
@@ -149,32 +146,27 @@ export default async function TodayPage() {
       // The one question this page asks about agents: is there a fast model at
       // all? Keyed by user, not workspace — see docs/SCHEMA.md.
       hasAgentRole(supabase, user.id, 'fast'),
-      // Slice 18: the setup card's last step. Also keyed by user — one person's
-      // Google account is not a fact about their timetable.
-      getGoogleAccount(supabase, user.id),
+      // Slice 20. Inside the batch on purpose: `getProgress` is itself one
+      // `Promise.all`, so asking it here costs this page no extra waiting at
+      // all, and asking it after the batch would have cost a full ~606ms round
+      // trip on the screen that gets opened every morning.
+      getProgress(supabase, user.id, workspace.id),
     ]);
 
-  // The first thing a new account meets is an empty database, and this is the
-  // only screen that says so. Five steps since slice 18, ticked off real data,
-  // and gone for good the moment there is both a course and a term — which is
-  // the point at which there is something on this page worth reading instead.
-  // Not a wizard: nothing here blocks the app, and /today renders perfectly
-  // well underneath. The one thing that *does* block is a username, and that
-  // happens on /welcome before this page is ever reached.
+  // Slice 20 replaced the five-step card here with one line pointing at
+  // `/start`, where the steps now live and where they can be walked one at a
+  // time. What is left on this screen is the invitation, not the checklist.
   //
-  // The condition is still "a course and a term" and deliberately not "all five
-  // steps". Connecting Google is optional for ever — some people will never
-  // want it — and a setup card that never goes away is a card that gets
-  // ignored. The two steps slice 18 added are guidance while it is up, not
-  // conditions for taking it down. See docs/DECISIONS.md.
+  // It goes when Act 1 is complete — a term, a course, a class and a note — or
+  // when the user says they are done with it. Act 2 needs an API key some people
+  // will never want, and a line that never goes away is a line that gets
+  // ignored, taking the rest of the screen's credibility with it. Same
+  // reasoning as the card it replaces (docs/DECISIONS.md, slice 18).
   //
-  // The extra read is inside the `if`, so it is made only while the card is
-  // actually being drawn — never once the semester is set up.
-  const termSet = Boolean(workspace.term_start && workspace.term_end);
-  const settingUp =
-    (await cookies()).get(FIRST_RUN_COOKIE)?.value !== '1' &&
-    (courses.length === 0 || !termSet);
-  const sessions = settingUp ? await getSessions(supabase, workspace.id) : [];
+  // Nothing here blocks the app: /today renders perfectly well underneath, and
+  // no route redirects into /start. The one screen that blocks is /welcome, and
+  // that happens before this page is ever reached.
+  const settingUp = shouldOfferSetup(progress);
 
   // A task due at 08:00 on a morning it is now 10:00 is in both lists.
   const seen = new Set<string>();
@@ -212,13 +204,9 @@ export default async function TodayPage() {
 
       {settingUp ? (
         <div className="pt-2">
-          <FirstRun
-            termSet={termSet}
-            hasCourses={courses.length > 0}
-            hasClasses={sessions.length > 0}
-            hasModel={hasFastModel}
-            hasGoogle={googleAccount !== null}
-            dismiss={skipFirstRunAction}
+          <FinishSetupLine
+            doneCount={progress.doneCount}
+            total={progress.steps.length}
           />
         </div>
       ) : null}

@@ -1,5 +1,6 @@
 // Public API of the blocks module. Import only from here.
 export {
+  countBlocks,
   createBlock,
   updateBlock,
   moveBlock,

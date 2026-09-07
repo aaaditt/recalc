@@ -90,3 +90,25 @@ export async function findByUsername(
   const rows = Array.isArray(data) ? data : [];
   return rows.length > 0 ? foundProfileSchema.parse(rows[0]) : null;
 }
+
+/**
+ * Mark the guided setup path as dismissed, or un-dismiss it.
+ *
+ * A timestamp rather than a boolean: "when did they decide they were done with
+ * this" is worth being able to answer, and `is not null` is the flag. Passing
+ * null puts it back, which is what the "start again" link on /start does.
+ */
+export async function updateOnboardingDismissed(
+  db: SupabaseClient,
+  userId: string,
+  at: string | null
+): Promise<Profile> {
+  const { data, error } = await db
+    .from('profiles')
+    .update({ onboarding_dismissed_at: at, updated_at: new Date().toISOString() })
+    .eq('id', userId)
+    .select('*')
+    .single();
+  if (error) throw new Error(`profiles.updateOnboardingDismissed: ${error.message}`);
+  return profileSchema.parse(data);
+}

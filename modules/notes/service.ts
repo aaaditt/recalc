@@ -4,6 +4,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { localDateKey, localTimeZone } from '@/lib/time';
 import {
+  countBlocks,
   createBlock,
   getBlock,
   getBlocks,
@@ -408,4 +409,19 @@ export async function saveNoteDocument(
   }
 
   return { id: doc.id, title: titleOf(doc), nodes: saved };
+}
+
+/**
+ * How many notes exist in this workspace.
+ *
+ * Deliberately not `listNotes(...).length`: that assembles every lecture note
+ * and every standalone note and reads their blocks, which is a lot of work to
+ * answer a question whose only interesting value is zero. A note document is a
+ * live block of type `note`, so this is one count in the database.
+ *
+ * Slice 20 uses it for the guided path's fourth step, on a screen — /today —
+ * that is opened every morning and must not grow a round trip.
+ */
+export async function countNotes(db: SupabaseClient, workspaceId: string): Promise<number> {
+  return countBlocks(db, workspaceId, 'note');
 }

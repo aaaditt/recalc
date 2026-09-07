@@ -86,6 +86,45 @@ export async function countByStatus(
   return count ?? 0;
 }
 
+/** How many derivations of one recipe exist in a workspace, at any status. */
+export async function countByRecipe(
+  db: SupabaseClient,
+  workspaceId: string,
+  recipe: string
+): Promise<number> {
+  const { count, error } = await db
+    .from('derivations')
+    .select('id', { count: 'exact', head: true })
+    .eq('workspace_id', workspaceId)
+    .eq('recipe', recipe);
+  if (error) throw new Error(`recalc.countByRecipe: ${error.message}`);
+  return count ?? 0;
+}
+
+/**
+ * How many derivations of one recipe have gone stale at least once.
+ *
+ * `stale_runs` is incremented by `mark_derivations_stale()` on the fresh->stale
+ * transition and by nothing else (migration 015). It is not the same question as
+ * "how many are stale now": accepting the diff in /review returns a derivation to
+ * `fresh` and leaves this count where it was, which is the whole reason the
+ * column exists.
+ */
+export async function countByRecipeEverStale(
+  db: SupabaseClient,
+  workspaceId: string,
+  recipe: string
+): Promise<number> {
+  const { count, error } = await db
+    .from('derivations')
+    .select('id', { count: 'exact', head: true })
+    .eq('workspace_id', workspaceId)
+    .eq('recipe', recipe)
+    .gt('stale_runs', 0);
+  if (error) throw new Error(`recalc.countByRecipeEverStale: ${error.message}`);
+  return count ?? 0;
+}
+
 // ---------------------------------------------------------------------------
 // Derivations — writes
 // ---------------------------------------------------------------------------

@@ -48,7 +48,11 @@ create table derivations (
   prompt_version   int  not null default 1,
   status           text not null default 'fresh',  -- fresh|stale|computing|error
   error            text,
-  computed_at      timestamptz
+  computed_at      timestamptz,
+  -- Slice 20. How many times this has gone fresh->stale. Monotonic: nothing in
+  -- /review resets it, which is what makes "this summary has been out of date
+  -- at least once" a question that can be asked long after the fact.
+  stale_runs       int  not null default 0
 );
 create index on derivations (workspace_id, status);
 
@@ -201,8 +205,15 @@ create table profiles (
   username     text not null,          -- lowercase; 3-20 of [a-z0-9_]
   display_name text,
   created_at   timestamptz not null default now(),
-  updated_at   timestamptz not null default now()
+  updated_at   timestamptz not null default now(),
+  -- Slice 20. When this account put the guided setup path away. Replaces a
+  -- cookie, which said the wrong thing the moment you opened a second device.
+  onboarding_dismissed_at timestamptz
 );
+
+-- An `after insert` trigger on this table (migration 014) mirrors "this account
+-- has a username" into auth.users.raw_app_meta_data, so the proxy reads it off
+-- the JWT instead of spending a round trip on every signed-in request.
 create unique index profiles_username_key on profiles (lower(username));
 ```
 

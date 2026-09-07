@@ -1,6 +1,7 @@
 // Public API of the notes module. Import only from here.
 export {
   getNoteDocument,
+  countNotes,
   getNoteRefs,
   getStandaloneNote,
   listNotes,

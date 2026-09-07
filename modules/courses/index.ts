@@ -3,6 +3,7 @@ export {
   getCourses,
   getCourse,
   getSessions,
+  getSessionsInWorkspace,
   getSession,
   getSyllabusUnits,
   getMeeting,
