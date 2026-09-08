@@ -23,6 +23,10 @@ NEXT_PUBLIC_GOOGLE_PICKER_API_KEY   empty
 features at once: Drive attachment (slice 09), Gmail sync (slices 14–15), and
 the "Continue with Google" button on `/login` (slice 18).
 
+It no longer blocks *signing in*: slice 24 added a password. Sign in with a magic
+link once, set a password on Settings → Account, and after that neither Google
+nor your email is in the way.
+
 ### 2. Supabase's Google auth provider is not enabled
 
 `docs/SLICE_18_SETUP.md` §5. Needs step 1 done first, because it reuses the
@@ -31,9 +35,9 @@ same client ID and secret.
 ### 3. Nothing — every slice is green
 
 `e1710b9` (18), `a5df597` (19), `d527191` (20), `10982a7` (21), `7f59519` (22),
-and slice 23. `npm run check` passes on all 519 tests and `npm run build` is
-clean. Migrations 014 to 018 are applied to the remote database and every
-backfill has run.
+`1b9746c` (23), and slice 24. `npm run check` passes on all 525 tests and
+`npm run build` is clean. Migrations 014 to 018 are applied to the remote
+database and every backfill has run; slice 24 needed no migration.
 
 **Worth doing by hand once:** friends and comparing cannot be tried alone. Make a
 second account with another email in a private window, claim a username there,
@@ -270,12 +274,46 @@ A compare URL for someone who is not an accepted friend is a 404, not an
 explanation — "you are not friends with this person" confirms that the person
 exists.
 
+### Slice 24 — Account — **DONE** (2026-09-08)
+
+Not on the original plan. Found by using the app: **there was no way to sign
+out** — not a button, not a route, not one call to `signOut()` in twenty-three
+slices — and **`/settings` was a 404**, its five screens reachable only through
+each other's headers.
+
+- **A password**, as a third way in and first on `/login`. The other two depend
+  on something outside this app: the magic link needs your email, Google needs a
+  working OAuth client. One email box with two submit buttons (`formAction`), so
+  "Email me a link instead" reuses the same field and needs no JavaScript.
+- **`/login` still cannot create an account.** A password is set from
+  `/settings/account` while signed in, so there is no path there that makes a new
+  user and a typo is "that did not work" rather than a second empty account. It
+  also needs no Supabase dashboard change, unlike password *sign-up*.
+- **`/settings`** — a list of links, duplicating no setting, and including
+  `/friends` and `/start` because what belongs there is "things about your
+  account", not "things whose URL starts with /settings".
+- **`/settings/account`** — email, username (stated, still not editable),
+  display name, set-a-password, and sign out.
+- **Sign-out is global** and falls back to a local sign-out on error rather than
+  ignoring it. `scope: 'global'` needs a live session to revoke and so can fail on
+  an expired token, which is exactly when somebody presses it.
+- Reached from an account row at the **foot of the sidebar** (below the six, not a
+  seventh destination) and from a **Settings link in `/today`'s header**, which is
+  how a phone gets there — the bottom bar is a full six-column grid.
+
+`modules/profiles/account.test.ts` proves the two things worth being sure of:
+setting a password does not make a new account (same id, same workspace, same
+username, same courses, and the old password stops working), and signing out
+actually ends the session — the same client then reads nothing, which is an
+assertion that would pass against no implementation at all if it used the
+service-role key.
+
 ---
 
 ## Every planned slice is done
 
-00–23. `npm run check` passes on 519 tests across 43 files and `npm run build` is
-clean. What is left is in **"What to build next"** in `docs/SLICES.md` and in
+00–23, plus 24. `npm run check` passes on 525 tests across 44 files and
+`npm run build` is clean. What is left is in **"What to build next"** in `docs/SLICES.md` and in
 **"Noticed, not fixed"** at the bottom of `docs/DECISIONS.md`, and the three that
 matter most have not moved since slice 18:
 

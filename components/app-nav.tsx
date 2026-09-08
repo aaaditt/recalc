@@ -151,9 +151,16 @@ function StaleBadge({ count, className }: { count: number; className?: string })
 type AppNavProps = {
   /** Stale derivations waiting in /review. Read by the shell, never here. */
   staleCount?: number;
+  /**
+   * The signed-in username, for the account row at the foot of the sidebar.
+   *
+   * Slice 24. Absent means the row is not drawn, which is the state during the
+   * one render between signing in and claiming a name.
+   */
+  username?: string | null;
 };
 
-export function AppNav({ staleCount = 0 }: AppNavProps) {
+export function AppNav({ staleCount = 0, username = null }: AppNavProps) {
   const pathname = usePathname();
   const badgeFor = (href: string) => (href === '/review' ? staleCount : 0);
 
@@ -195,6 +202,33 @@ export function AppNav({ staleCount = 0 }: AppNavProps) {
             </Link>
           );
         })}
+
+        {/* Slice 24. The way to Settings, and from there the way out — until
+            that slice there was no sign-out anywhere in this app.
+            
+            It sits below the six with a margin above rather than becoming a
+            seventh destination: `mt-auto` puts it at the foot of the column, and
+            the nav's own rule is that six is the limit (docs/DECISIONS.md,
+            slice 13). The bottom bar on a phone is a six-column grid and cannot
+            take it at all, which is why /today's header carries the same link. */}
+        {username ? (
+          <Link
+            href="/settings"
+            aria-current={isCurrent(pathname, '/settings') ? 'page' : undefined}
+            className={cx(
+              'mt-auto flex h-(--control-height) items-center gap-3 rounded-card px-2',
+              'text-14 transition-colors duration-100',
+              isCurrent(pathname, '/settings')
+                ? 'bg-sunken font-medium text-ink'
+                : 'text-muted hover:bg-sunken hover:text-ink'
+            )}
+          >
+            <span className="min-w-0 flex-1 truncate font-mono text-13">@{username}</span>
+            <span aria-hidden className="shrink-0 text-12 text-faint">
+              Settings
+            </span>
+          </Link>
+        ) : null}
       </nav>
 
       {/* Phone. Fixed to the bottom, 62px, one hairline along the top, and

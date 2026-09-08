@@ -6,6 +6,7 @@ import { HintLine } from '@/components/hints/hint-line';
 import { currentWorkspace } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { hintFor } from '@/modules/hints';
+import { getProfile } from '@/modules/profiles';
 import { getStaleCount } from '@/modules/recalc';
 
 // The signed-in shell. /login and /styleguide sit outside this route group on
@@ -31,9 +32,16 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   // the page rendering inside this layout asks the same two questions for free
   // rather than paying two more round trips for the same answers.
   const found = await currentWorkspace();
-  const staleCount = found
-    ? await getStaleCount(await createClient(), found.workspace.id)
-    : 0;
+
+  // Two questions, asked together rather than one after the other — slice 19's
+  // rule. The profile is for the account row at the foot of the sidebar, which
+  // is the only way to Settings on a laptop.
+  const [staleCount, profile] = found
+    ? await Promise.all([
+        getStaleCount(await createClient(), found.workspace.id),
+        getProfile(await createClient(), found.user.id),
+      ])
+    : [0, null];
 
   // Slice 21. The nav has carried this number since slice 11 and has never said
   // what it means; the first time anything goes out of date, one line does.
@@ -45,7 +53,7 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex min-h-full flex-1">
-      <AppNav staleCount={staleCount} />
+      <AppNav staleCount={staleCount} username={profile?.username ?? null} />
 
       <main className="min-w-0 flex-1 px-4 pt-6 pb-(--content-pad-bottom) md:px-8 md:pt-8 md:pb-12">
         {/* Above the page rather than inside it: this one is about the app, not

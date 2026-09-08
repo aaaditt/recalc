@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 import { toggleTaskDoneAction } from '../tasks/actions';
@@ -200,7 +201,21 @@ export default async function TodayPage() {
 
   return (
     <>
-      <PageHeader title="Today" subtitle={formatDate(today)} />
+      <PageHeader
+        title="Today"
+        subtitle={formatDate(today)}
+        // Slice 24. The only route to Settings on a phone: the bottom bar is a
+        // six-column grid and full, and /today is the one screen everybody
+        // opens. Sign-out is behind it.
+        actions={
+          <Link
+            href="/settings"
+            className="text-13 text-muted underline-offset-4 hover:text-ink hover:underline"
+          >
+            Settings
+          </Link>
+        }
+      />
 
       {settingUp ? (
         <div className="pt-2">

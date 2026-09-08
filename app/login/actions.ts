@@ -8,6 +8,46 @@ async function currentOrigin(): Promise<string> {
   return (await headers()).get('origin') ?? 'http://localhost:3000';
 }
 
+/**
+ * The ordinary way in — slice 24.
+ *
+ * Added because the other two both depend on something outside this app: the
+ * magic link needs you to go and read your email, and Google needs a working
+ * OAuth client. A password needs neither, which is what makes it the one that
+ * works at 7:45am on a phone.
+ *
+ * Nothing here creates an account. Setting a password is done from
+ * `/settings/account` while signed in, so there is no path through this form
+ * that makes a new user, and a typo in an email address is "that did not work"
+ * rather than a second empty account.
+ *
+ * The error is deliberately the same sentence for a wrong password and an
+ * unknown email. Telling them apart tells somebody whether an address has an
+ * account here, which is the one thing a login form should not answer.
+ */
+export async function signInWithPassword(formData: FormData) {
+  const email = String(formData.get('email') ?? '').trim();
+  const password = String(formData.get('password') ?? '');
+
+  if (!email || !password) {
+    redirect('/login?error=' + encodeURIComponent('Enter your email and password.'));
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+
+  if (error) {
+    redirect(
+      '/login?error=' +
+        encodeURIComponent('That email and password do not match an account.') +
+        '&email=' +
+        encodeURIComponent(email)
+    );
+  }
+
+  redirect('/today');
+}
+
 export async function sendMagicLink(formData: FormData) {
   const email = String(formData.get('email') ?? '').trim();
   if (!email) redirect('/login?error=' + encodeURIComponent('Enter your email.'));

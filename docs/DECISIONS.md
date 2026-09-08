@@ -2769,6 +2769,93 @@ something good rather than something needing attention.
 Instead of: two grids side by side, which is the literal reading of "compare
 timetables" and makes the eye do the intersection by hand.
 
+## 2026-09-08 — There was no way to sign out, for twenty-three slices
+Because: worth writing down before the fix, because of how it happened. Not one
+line in this codebase called `signOut()`. `/settings` was a 404 — the five
+screens under it were each built by the slice that needed them and cross-linked
+from each other's headers, so the set was navigable only by somebody who already
+knew where they were going — and nothing in the app pointed at any of it. The
+gap survived that long precisely because the person building it is always
+already signed in, and never once needed to leave.
+Instead of: nothing. There was no decision here to disagree with; there was an
+absence nobody had looked at.
+
+## 2026-09-08 — A password, added as the third way in and put first on the page
+Because: the other two both depend on something outside this app. The magic link
+needs you to go and read your email, which on a phone at 7:45am is three apps
+away; Google needs a working OAuth client, which this project does not have
+(`docs/GOOGLE_SETUP.md` is still outstanding). A password needs neither. It is
+listed first because it is the one that works.
+Instead of: fixing Google first. That is fifteen minutes of somebody else's
+dashboard and it does not remove the dependency, it just satisfies it.
+
+## 2026-09-08 — `/login` cannot create an account, and a password is set from `/settings/account`
+Because: there is no sign-up form, so there is no path through the login page
+that makes a new user — which means a typo in an email address is "that did not
+work" rather than a second, empty account with your semester missing from it. A
+password is set while already signed in, where the session says who you are, so
+`updateUser({ password })` changes the account you are actually in. It also needs
+no change to the Supabase dashboard, unlike a password *sign-up*, which is gated
+by the project's "Confirm email" setting.
+Instead of: a sign-up form on `/login`, which for a single-user app is the half
+least likely ever to be used and the half that depends on a setting outside the
+repository.
+
+## 2026-09-08 — One email box, two submit buttons
+Because: the password form and the magic link both want an email address, and two
+identical email fields on one screen is a way to type your address into the wrong
+one. `formAction` on each button sends the same form to a different server
+action, which needs no JavaScript. The password input is deliberately not
+`required`, so "Email me a link instead" submits with it empty and the action
+checks for itself.
+Instead of: two forms, or a client component that swaps them.
+
+## 2026-09-08 — A wrong password and an unknown email get the same sentence
+Because: telling them apart tells somebody whether an address has an account
+here, which is the one question a login form should not answer. It is the same
+reasoning as `find_profile_by_username` returning null for both "nobody has that
+name" and "that is not a username" (slice 18).
+Instead of: "no account with that email", which is friendlier and is an
+enumeration oracle.
+
+## 2026-09-08 — Sign-out is global, and falls back to local rather than failing quietly
+Because: "sign me out", said on a laptop you are about to hand back, means all of
+them. `scope: 'global'` needs a live session to revoke, so it can fail on a token
+that has already expired — which is exactly when somebody presses it. A sign-out
+that quietly did nothing would be the worst bug in this slice, so the failure
+falls back to a local sign-out and is logged: better to end this browser's session
+and say nothing about the others than to leave somebody signed in on a screen that
+told them they were not.
+Instead of: ignoring the error, which is what `await supabase.auth.signOut()` on
+its own does and is indistinguishable from success.
+
+## 2026-09-08 — Settings is reached from the sidebar foot and from /today, not from the nav
+Because: `AppNav` renders six destinations and slice 13 decided six is the limit
+— the phone bar is a six-column grid and a seventh column is 56px, under the tap
+target once padding is counted. So the sidebar gains an account row *below* the
+six with `mt-auto`, which is not a seventh destination, and `/today`'s header
+gains a Settings link, which is how a phone reaches it. `/today` is the one
+screen everybody opens.
+Instead of: a seventh nav destination, which would have meant rebuilding the
+bottom bar; or leaving it where it was, which was nowhere.
+
+## 2026-09-08 — `/settings` is a list of links and duplicates no setting
+Because: every setting on it belongs to the screen that owns it, and a page that
+restated any of them here would be a second place for that setting to be wrong.
+It also lists `/friends` and `/start`, which are not under `/settings` at all —
+what belongs on this page is "things about your account and your set-up", not
+"things whose URL starts with /settings".
+Instead of: a settings page with the actual controls on it, which is the shape
+most apps have and the reason most apps have two places to change a thing.
+
+## 2026-09-08 — The username still cannot be changed, and the page says so
+Because: unchanged from slice 18 — a username is what somebody else types to add
+you, so changing it silently breaks their end. The account page states it as a
+fact next to the name rather than leaving the absence of a field to be
+interpreted.
+Instead of: quietly not offering it, which reads as an oversight rather than a
+decision.
+
 ## Noticed, not fixed
 
 Things spotted outside the current slice. Do not fix them mid-slice; write them here.
@@ -3534,3 +3621,19 @@ Things spotted outside the current slice. Do not fix them mid-slice; write them 
   compare screen says so out loud ("they have not been told you looked"). That is
   honest today and is the kind of thing worth deciding on purpose before there is
   more than one user.
+- **There is no way to delete your account from inside the app.** Sign-out is not
+  deletion and the page says so. Deleting means `auth.admin.deleteUser`, which
+  needs the service-role key and therefore a route handler, and the cascade would
+  take the workspace, every block, every note and every friendship with it. That
+  is a real feature with a real confirmation flow, not a button.
+- **There is no password reset from `/login`.** If you forget it, the magic link
+  is the way back in, and then Settings → Account sets a new one. That works and
+  is two steps; a proper reset email is `resetPasswordForEmail` plus a page to
+  land on.
+- **Nothing shows whether a password is already set.** Supabase does not expose a
+  reliable flag for it, so the form says "Set a password" without claiming to
+  know which of set-or-change it is doing. Guessing from `identities` would be a
+  guess.
+- **`/settings` is now the eighth screen reached by a link rather than a nav
+  destination**, and it is the one that holds the other seven. That is the fifth
+  entry in this file about the nav being full at six.

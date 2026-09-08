@@ -29,6 +29,7 @@ column as you go — this is how a fresh session knows where we are.
 | 21 | Just-in-time hints — a feature explains itself when it becomes useful | done |
 | 22 | Friends — requests, accept/decline, per-friend visibility | done |
 | 23 | Compare — one friend's free/busy or detail, beside yours | done |
+| 24 | **Account** — a password, a sign-out, and a settings page that exists | done |
 | ?? | All-day timetable — a 12am–12am day holding named blocks | **not designed** |
 
 Slice 20's design is at
@@ -55,6 +56,12 @@ put `dismissed_notices` on that table, and a row-level policy would have handed 
 friend every column), and `sessions_select` was **not** widened either. Reading
 another person goes through two `security definer` functions that name their
 columns: `my_friendships()` and `friend_timetable()`.
+
+Slice 24 was not on the original plan and was found by using the app: there was
+no way to **sign out** — no button and no route, in twenty-three slices — and
+`/settings` was a 404, with its five screens reachable only through each other's
+headers. It adds a password as a third way in, a `/settings` index, and
+`/settings/account`.
 
 **Every slice on this list is now done.** What comes next is in "What to build
 next" below, and the all-day timetable still needs a brainstorm before a plan.
