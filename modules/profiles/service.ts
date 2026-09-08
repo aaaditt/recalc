@@ -120,36 +120,55 @@ export function usernameProblem(raw: string): string | null {
 
 export { normaliseUsername };
 
-/**
- * Put the guided setup path away, or bring it back.
- *
- * `modules/onboarding` owns the steps but owns no table, so this pair lives
- * here: `profiles` belongs to this module and CLAUDE.md's Never rule 2 says only
- * a module's own repo touches its tables.
- */
-export async function setOnboardingDismissed(
+// ---------------------------------------------------------------------------
+// Notices — "I have seen this" — slice 21
+// ---------------------------------------------------------------------------
+//
+// One mechanism, shared. `modules/onboarding` dismisses `setup`; `modules/hints`
+// dismisses the five feature hints. Neither of them touches `profiles`, because
+// `profiles` belongs to this module (CLAUDE.md's Never rule 2) — they call
+// through here.
+//
+// This module knows nothing about what any id *means*, on purpose. A list of
+// valid ids here would be a second place to remember to update, and the failure
+// it would prevent — a typo'd id — costs one hint showing forever rather than
+// anything a person could not simply dismiss again.
+
+/** Every notice this account has dismissed, as id -> when. */
+export async function getDismissedNotices(
+  db: SupabaseClient,
+  userId: string
+): Promise<Record<string, string>> {
+  const profile = await repo.findByUserId(db, userId);
+  return profile?.dismissed_notices ?? {};
+}
+
+/** Has this account put this one away? */
+export async function hasDismissed(
   db: SupabaseClient,
   userId: string,
-  dismissed: boolean
-): Promise<Profile> {
-  return repo.updateOnboardingDismissed(
-    db,
-    userId,
-    dismissed ? new Date().toISOString() : null
-  );
+  noticeId: string
+): Promise<boolean> {
+  return (await getDismissedNotices(db, userId))[noticeId] !== undefined;
 }
 
 /**
- * Has this account put the setup path away?
+ * Put one away, or bring it back.
  *
- * False for an account with no profile at all. That state lasts exactly one page
- * load — the one between signing in for the first time and the welcome screen —
- * and "they have not dismissed it" is the truthful answer during it.
+ * Bringing one back matters as much as putting it away: dismissing is not a
+ * decision anybody should be stuck with, and `/start` is reachable from settings
+ * for exactly that reason.
  */
-export async function isOnboardingDismissed(
+export async function setDismissed(
   db: SupabaseClient,
-  userId: string
-): Promise<boolean> {
-  const profile = await repo.findByUserId(db, userId);
-  return profile?.onboarding_dismissed_at != null;
+  userId: string,
+  noticeId: string,
+  dismissed: boolean
+): Promise<Profile> {
+  const notices = { ...(await getDismissedNotices(db, userId)) };
+
+  if (dismissed) notices[noticeId] = new Date().toISOString();
+  else delete notices[noticeId];
+
+  return repo.updateDismissedNotices(db, userId, notices);
 }

@@ -7,6 +7,8 @@ import {
   toggleTaskDoneAction,
   updateTaskAction,
 } from './actions';
+import { dismissHintAction } from '../../hint-actions';
+import { HintLine } from '@/components/hints/hint-line';
 import { QuickAdd } from '@/components/tasks/quick-add';
 import { TaskEdit, type TaskEditUnit } from '@/components/tasks/task-edit';
 import { TaskItem } from '@/components/tasks/task-item';
@@ -15,6 +17,7 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { PageHeader } from '@/components/ui/page-header';
 import { colourForCourse, type CourseColour } from '@/lib/course-colours';
 import { cx } from '@/lib/cx';
+import { currentWorkspace } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import {
   TASK_FILTERS,
@@ -27,6 +30,7 @@ import {
   isOverdue,
 } from '@/lib/tasks';
 import { localDateKey, localTimeLabel, localTimeZone, todayIn } from '@/lib/time';
+import { hintFor } from '@/modules/hints';
 import { getCourses, getSyllabusUnits } from '@/modules/courses';
 import { getNoteRefs } from '@/modules/notes';
 import { getTasks, type Task } from '@/modules/tasks';
@@ -89,6 +93,18 @@ export default async function TasksPage({
     getCourses(supabase, workspace.id),
     getTasks(supabase, workspace.id),
   ]);
+
+  // Slice 21. The quick-add box below reads "MA201 essay fri 5pm" and pulls the
+  // course, the date and the time out of it (lib/task-shorthand.ts), and nothing
+  // on this screen has ever said so. It waits for a course to exist, because
+  // there is no code to recognise until there is one.
+  //
+  // `courses` was already fetched and the dismissals came down with the session:
+  // no query is added here.
+  const session = await currentWorkspace();
+  const hint = session
+    ? hintFor('tasks', { courses: courses.length }, session.dismissed)
+    : null;
 
   // Courses come back ordered by code, so a course with no colour of its own
   // gets a stable one from the palette — the same answer /today gives.
@@ -213,6 +229,12 @@ export default async function TasksPage({
           liveCount === 0 ? 'Nothing open.' : `${liveCount} open`
         }
       />
+
+      {hint ? (
+        <div className="pb-4">
+          <HintLine hint={hint} dismiss={dismissHintAction.bind(null, hint.id)} />
+        </div>
+      ) : null}
 
       <section className="pt-2">
         <SectionLabel>Add</SectionLabel>

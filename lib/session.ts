@@ -2,6 +2,7 @@ import { cache } from 'react';
 import type { User } from '@supabase/supabase-js';
 
 import { createClient } from '@/lib/supabase/server';
+import { getDismissedNotices } from '@/modules/profiles';
 import { ensureWorkspace, type Workspace } from '@/modules/workspaces';
 
 // Who is asking, and which workspace is theirs — asked once per request.
@@ -42,12 +43,29 @@ export const currentUser = cache(async (): Promise<User | null> => {
  * the opposite and use `requireWorkspace` below.
  */
 export const currentWorkspace = cache(
-  async (): Promise<{ user: User; workspace: Workspace } | null> => {
+  async (): Promise<{
+    user: User;
+    workspace: Workspace;
+    /** Notice id -> when it was dismissed. Slice 21. */
+    dismissed: Record<string, string>;
+  } | null> => {
     const user = await currentUser();
     if (!user) return null;
 
     const supabase = await createClient();
-    return { user, workspace: await ensureWorkspace(supabase, user.id) };
+
+    // In parallel, not in sequence, and that is the whole reason slice 21's
+    // hints are free. Both of these need `user.id` and neither needs the other,
+    // so asking for them together costs one round trip rather than two — and
+    // because this is memoised, the shell and the page inside it share the
+    // answer. A hint system that read this per screen would have put six ~606ms
+    // trips back into an app that spent slice 19 removing four.
+    const [workspace, dismissed] = await Promise.all([
+      ensureWorkspace(supabase, user.id),
+      getDismissedNotices(supabase, user.id),
+    ]);
+
+    return { user, workspace, dismissed };
   }
 );
 

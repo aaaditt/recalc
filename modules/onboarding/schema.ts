@@ -145,3 +145,14 @@ export const STEPS: StepDefinition[] = [
 export const ACT_TWO_PREAMBLE =
   'This part needs an API key from a provider. It costs money, it is yours ' +
   'rather than ours, and skipping it leaves you with a working app.';
+
+/**
+ * This path's id in `profiles.dismissed_notices`.
+ *
+ * Slice 21 gave every "I have seen this" in the app one home, and the guided
+ * path is one entry in it. The id is owned here rather than in
+ * `modules/profiles`, which stores notices without knowing what any of them
+ * mean, and rather than in `modules/hints`, which would make onboarding depend
+ * on a module that does not exist for it.
+ */
+export const SETUP_NOTICE = 'setup';

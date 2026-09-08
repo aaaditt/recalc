@@ -2,14 +2,18 @@ import Link from 'next/link';
 
 import { createStandaloneNoteAction } from './actions';
 import { Button } from '@/components/ui/button';
+import { dismissHintAction } from '../../hint-actions';
+import { HintLine } from '@/components/hints/hint-line';
 import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Field, Input, Select } from '@/components/ui/field';
 import { PageHeader } from '@/components/ui/page-header';
 import { colourForCourse, courseDot, type CourseColour } from '@/lib/course-colours';
+import { currentWorkspace } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { localTimeZone } from '@/lib/time';
 import { formatShortDate } from '@/lib/today';
+import { hintFor } from '@/modules/hints';
 import { getCourses, getSyllabusUnits, type SyllabusUnit } from '@/modules/courses';
 import { listNotes, type NoteListEntry } from '@/modules/notes';
 import { ensureWorkspace } from '@/modules/workspaces';
@@ -38,6 +42,17 @@ export default async function NotesPage() {
     getCourses(supabase, workspace.id),
     listNotes(supabase, workspace.id, zone),
   ]);
+
+  // Slice 21. Search reads inside notes rather than only their titles, and there
+  // is nothing on this screen that says so. It waits until there are five,
+  // which is roughly where scrolling this list stops being the faster way.
+  //
+  // `notes` was already fetched to draw the page and the dismissals came down
+  // with the session, so this is a pure function call and not a query.
+  const session = await currentWorkspace();
+  const hint = session
+    ? hintFor('notes', { notes: notes.length }, session.dismissed)
+    : null;
 
   // Courses come back ordered by code, so a course with no colour of its own
   // gets a stable one from the palette — the same answer /today gives.
@@ -78,6 +93,12 @@ export default async function NotesPage() {
             : `${notes.length} note${notes.length === 1 ? '' : 's'}`
         }
       />
+
+      {hint ? (
+        <div className="pb-4">
+          <HintLine hint={hint} dismiss={dismissHintAction.bind(null, hint.id)} />
+        </div>
+      ) : null}
 
       {groups.length === 0 ? (
         <Card>

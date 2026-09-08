@@ -26,7 +26,7 @@ column as you go — this is how a fresh session knows where we are.
 | 18 | **Identity** — usernames, the welcome gate, Google sign-in | done |
 | 19 | **Speed** — optimistic UI, and fewer round trips per save | done |
 | 20 | **Onboarding** — `/start`, a guided path that teaches by doing | done |
-| 21 | Just-in-time hints — a feature explains itself when it becomes useful | not started |
+| 21 | Just-in-time hints — a feature explains itself when it becomes useful | done |
 | 22 | Friends — requests, accept/decline, per-friend visibility | not started |
 | 23 | Compare — one friend's free/busy or detail, beside yours | not started |
 | ?? | All-day timetable — a 12am–12am day holding named blocks | **not designed** |

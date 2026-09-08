@@ -92,23 +92,24 @@ export async function findByUsername(
 }
 
 /**
- * Mark the guided setup path as dismissed, or un-dismiss it.
+ * Write the whole notices map back.
  *
- * A timestamp rather than a boolean: "when did they decide they were done with
- * this" is worth being able to answer, and `is not null` is the flag. Passing
- * null puts it back, which is what the "start again" link on /start does.
+ * The map is read, changed and written rather than updated in place with a
+ * `jsonb` operator, because there is exactly one writer per account and no
+ * concurrent dismissal to lose. If that ever stops being true the answer is
+ * `dismissed_notices || $1` in SQL, not a lock.
  */
-export async function updateOnboardingDismissed(
+export async function updateDismissedNotices(
   db: SupabaseClient,
   userId: string,
-  at: string | null
+  notices: Record<string, string>
 ): Promise<Profile> {
   const { data, error } = await db
     .from('profiles')
-    .update({ onboarding_dismissed_at: at, updated_at: new Date().toISOString() })
+    .update({ dismissed_notices: notices, updated_at: new Date().toISOString() })
     .eq('id', userId)
     .select('*')
     .single();
-  if (error) throw new Error(`profiles.updateOnboardingDismissed: ${error.message}`);
+  if (error) throw new Error(`profiles.updateDismissedNotices: ${error.message}`);
   return profileSchema.parse(data);
 }

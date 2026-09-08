@@ -114,12 +114,19 @@ export const profileSchema = z.object({
   display_name: z.string().nullable(),
   created_at: z.string(),
   updated_at: z.string(),
-  // Slice 20. When this account said it was done with the guided setup path.
-  // Null means "not dismissed", which is the state every account starts in.
-  // It lives on the person rather than in a cookie because "I am done with
-  // this" is not a fact about a browser — the cookie it replaces said the wrong
+  // Slice 21. Every "I have seen this" this account has said, as notice id ->
+  // the moment it was said. Slice 20 shipped this as a single
+  // `onboarding_dismissed_at` timestamp; migration 016 folded it in here as the
+  // id `setup`, because two mechanisms for one idea is one too many.
+  //
+  // It lives on the person rather than in a cookie because "I am done with this"
+  // is not a fact about a browser — the cookie this replaced said the wrong
   // thing the moment you opened the app on a phone.
-  onboarding_dismissed_at: z.string().nullable(),
+  //
+  // The ids belong to the modules that show the notices (`modules/onboarding`
+  // owns `setup`, `modules/hints` owns the rest); this module only stores them,
+  // and deliberately does not have an enum of them to be kept in step.
+  dismissed_notices: z.record(z.string(), z.string()).default({}),
 });
 
 /**

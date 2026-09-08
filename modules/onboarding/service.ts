@@ -3,11 +3,18 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { hasAgentRole } from '@/modules/agents';
 import { countBlocks } from '@/modules/blocks';
 import { getCourses, getSessionsInWorkspace } from '@/modules/courses';
-import { isOnboardingDismissed, setOnboardingDismissed } from '@/modules/profiles';
+import { hasDismissed, setDismissed } from '@/modules/profiles';
 import { countSummaries, countSummariesEverStale } from '@/modules/recalc';
 import { getWorkspace } from '@/modules/workspaces';
 
-import { STEPS, type Progress, type Step, type StepId, type StepState } from './schema';
+import {
+  SETUP_NOTICE,
+  STEPS,
+  type Progress,
+  type Step,
+  type StepId,
+  type StepState,
+} from './schema';
 
 // Where somebody is in the guided setup path.
 //
@@ -111,7 +118,7 @@ export async function getProgress(
       hasAgentRole(db, userId, 'deep'),
       countSummaries(db, workspaceId),
       countSummariesEverStale(db, workspaceId),
-      isOnboardingDismissed(db, userId),
+      hasDismissed(db, userId, SETUP_NOTICE),
     ]);
 
   const facts: Facts = {
@@ -156,11 +163,18 @@ export function shouldOfferSetup(progress: Progress): boolean {
   return !progress.dismissed && !progress.actOneComplete;
 }
 
-/** Put the path away, or bring it back. The only thing here that writes. */
+/**
+ * Put the path away, or bring it back. The only things here that write.
+ *
+ * Slice 21 moved this out of its own `onboarding_dismissed_at` column and into
+ * `profiles.dismissed_notices` under the id `setup`, beside the five feature
+ * hints. It is the same idea — "I have seen this" — and it did not deserve two
+ * mechanisms. See migration 016.
+ */
 export async function dismiss(db: SupabaseClient, userId: string): Promise<void> {
-  await setOnboardingDismissed(db, userId, true);
+  await setDismissed(db, userId, SETUP_NOTICE, true);
 }
 
 export async function restore(db: SupabaseClient, userId: string): Promise<void> {
-  await setOnboardingDismissed(db, userId, false);
+  await setDismissed(db, userId, SETUP_NOTICE, false);
 }

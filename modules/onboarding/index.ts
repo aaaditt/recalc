@@ -19,6 +19,7 @@
 export { dismiss, getProgress, restore, shouldOfferSetup } from './service';
 export {
   ACT_TWO_PREAMBLE,
+  SETUP_NOTICE,
   STEPS,
   actSchema,
   stepIdSchema,

@@ -206,9 +206,15 @@ create table profiles (
   display_name text,
   created_at   timestamptz not null default now(),
   updated_at   timestamptz not null default now(),
-  -- Slice 20. When this account put the guided setup path away. Replaces a
-  -- cookie, which said the wrong thing the moment you opened a second device.
-  onboarding_dismissed_at timestamptz
+  -- Slice 21. Every "I have seen this" this account has said, as notice id ->
+  -- the ISO timestamp it was said. Slice 20 shipped this as a single
+  -- `onboarding_dismissed_at`; migration 016 folded it in here as the id
+  -- `setup`, beside the five just-in-time hints. Replaces a cookie, which said
+  -- the wrong thing the moment you opened the app on a second device.
+  --
+  -- The ids belong to the modules that show the notices — `modules/onboarding`
+  -- owns `setup`, `modules/hints` owns the rest. This table only stores them.
+  dismissed_notices jsonb not null default '{}'::jsonb
 );
 
 -- An `after insert` trigger on this table (migration 014) mirrors "this account

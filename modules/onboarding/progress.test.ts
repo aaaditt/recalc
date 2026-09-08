@@ -5,8 +5,8 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import { saveAgentProfile } from '@/modules/agents';
 import { createBlock, updateBlock } from '@/modules/blocks';
 import { createCourse, createSession } from '@/modules/courses';
-import { getProgress, type StepId, type StepState } from '@/modules/onboarding';
-import { setOnboardingDismissed } from '@/modules/profiles';
+import { SETUP_NOTICE, getProgress, type StepId, type StepState } from '@/modules/onboarding';
+import { setDismissed } from '@/modules/profiles';
 import { keepOldVersion } from '@/modules/recalc';
 import { getPeriods } from '@/modules/timetable';
 import { ensureWorkspace, setTerm } from '@/modules/workspaces';
@@ -398,7 +398,7 @@ describe('dismissing the guided path', () => {
     expect((await getProgress(db, oneId, oneWorkspace)).dismissed).toBe(false);
     expect((await getProgress(db, twoId, twoWorkspace)).dismissed).toBe(false);
 
-    await setOnboardingDismissed(db, oneId, true);
+    await setDismissed(db, oneId, SETUP_NOTICE, true);
 
     // The one who dismissed it, on any device, with no cookies anywhere.
     expect((await getProgress(db, oneId, oneWorkspace)).dismissed).toBe(true);
@@ -407,12 +407,12 @@ describe('dismissing the guided path', () => {
   });
 
   it('can be undone, because the path is a place and not an event', async () => {
-    await setOnboardingDismissed(db, oneId, false);
+    await setDismissed(db, oneId, SETUP_NOTICE, false);
     expect((await getProgress(db, oneId, oneWorkspace)).dismissed).toBe(false);
   });
 
   it('never hides steps that are genuinely not done', async () => {
-    await setOnboardingDismissed(db, oneId, true);
+    await setDismissed(db, oneId, SETUP_NOTICE, true);
     const progress = await getProgress(db, oneId, oneWorkspace);
 
     // Dismissal is about where the path is *offered*, never about whether it is

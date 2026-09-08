@@ -10,6 +10,8 @@ import {
   unitRowAction,
 } from './actions';
 import { resolveQuestionFormAction } from '../../questions/actions';
+import { dismissHintAction } from '../../../hint-actions';
+import { HintLine } from '@/components/hints/hint-line';
 import { AddUnit } from '@/components/syllabus/add-unit';
 import { UnitTitle } from '@/components/syllabus/unit-title';
 import { Button } from '@/components/ui/button';
@@ -26,6 +28,7 @@ import {
   unfiledCount,
 } from '@/lib/questions';
 import { formatMinutes } from '@/lib/study';
+import { currentWorkspace } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import {
   courseProgress,
@@ -39,6 +42,7 @@ import {
 import { localTimeZone, todayIn } from '@/lib/time';
 import { formatShortDate } from '@/lib/today';
 import { getCourse, getCourses, getSyllabusUnits } from '@/modules/courses';
+import { hintFor } from '@/modules/hints';
 import { listNotes } from '@/modules/notes';
 import { getUnresolvedQuestions, type QuestionView } from '@/modules/questions';
 import { getUnitStudy } from '@/modules/study';
@@ -169,6 +173,15 @@ export default async function CoursePage({
     getUnresolvedQuestions(supabase, workspace.id, zone),
   ]);
 
+  // Slice 21. A focus session is logged against a syllabus unit, which is what
+  // makes the minutes worth anything later — and the only place that connection
+  // is visible is this page, once there are units to log against. `units` was
+  // already fetched; the dismissals came with the session.
+  const session = await currentWorkspace();
+  const hint = session
+    ? hintFor('course', { syllabusUnits: units.length }, session.dismissed)
+    : null;
+
   // Courses come back ordered by code, so a course with no colour of its own
   // gets the same fallback here as it does on /today, /tasks and /calendar.
   const colour = colourForCourse(
@@ -235,6 +248,12 @@ export default async function CoursePage({
 
   return (
     <>
+      {hint ? (
+        <div className="pb-4">
+          <HintLine hint={hint} dismiss={dismissHintAction.bind(null, hint.id)} />
+        </div>
+      ) : null}
+
       <header className="pb-2">
         <Link
           href="/courses"

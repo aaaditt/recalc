@@ -661,25 +661,25 @@ export type Database = {
       profiles: {
         Row: {
           created_at: string
+          dismissed_notices: Json
           display_name: string | null
           id: string
-          onboarding_dismissed_at: string | null
           updated_at: string
           username: string
         }
         Insert: {
           created_at?: string
+          dismissed_notices?: Json
           display_name?: string | null
           id: string
-          onboarding_dismissed_at?: string | null
           updated_at?: string
           username: string
         }
         Update: {
           created_at?: string
+          dismissed_notices?: Json
           display_name?: string | null
           id?: string
-          onboarding_dismissed_at?: string | null
           updated_at?: string
           username?: string
         }

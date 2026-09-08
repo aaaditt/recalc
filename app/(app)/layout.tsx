@@ -1,8 +1,11 @@
 import type { ReactNode } from 'react';
 
+import { dismissHintAction } from './hint-actions';
 import { AppNav } from '@/components/app-nav';
+import { HintLine } from '@/components/hints/hint-line';
 import { currentWorkspace } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
+import { hintFor } from '@/modules/hints';
 import { getStaleCount } from '@/modules/recalc';
 
 // The signed-in shell. /login and /styleguide sit outside this route group on
@@ -32,11 +35,27 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
     ? await getStaleCount(await createClient(), found.workspace.id)
     : 0;
 
+  // Slice 21. The nav has carried this number since slice 11 and has never said
+  // what it means; the first time anything goes out of date, one line does.
+  //
+  // It costs nothing: `staleCount` was already read for the badge, and which
+  // hints have been dismissed came down with the session, in parallel with the
+  // workspace. `hintFor` is a pure function. There is no query here.
+  const hint = found ? hintFor('shell', { staleCount }, found.dismissed) : null;
+
   return (
     <div className="flex min-h-full flex-1">
       <AppNav staleCount={staleCount} />
 
       <main className="min-w-0 flex-1 px-4 pt-6 pb-(--content-pad-bottom) md:px-8 md:pt-8 md:pb-12">
+        {/* Above the page rather than inside it: this one is about the app, not
+            about whichever screen you happen to be on. */}
+        {hint ? (
+          <div className="mx-auto w-full max-w-(--page-width-wide) pb-4">
+            <HintLine hint={hint} dismiss={dismissHintAction.bind(null, hint.id)} />
+          </div>
+        ) : null}
+
         {children}
       </main>
     </div>

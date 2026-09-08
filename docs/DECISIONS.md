@@ -2521,6 +2521,90 @@ decided and the migration ledger is a record of what ran.
 Instead of: renumbering slice 19's migration, which is applied and therefore
 frozen.
 
+## 2026-09-08 — One `dismissed_notices` map, and slice 20's column is gone
+Because: slice 20 added `onboarding_dismissed_at` for a single flag, and this
+slice needed the same idea five more times. Two mechanisms for "I have seen
+this" is one more than the idea deserves, and the second one is always the one
+that gets forgotten. Migration 016 adds `profiles.dismissed_notices jsonb`,
+backfills `setup` out of the old column, and drops it. `jsonb` and not `text[]`
+because the value is worth keeping: an array answers "have they seen it", a map
+of id -> timestamp also answers "when", which is the question you want the day a
+hint turns out to be firing at the wrong moment.
+Instead of: leaving slice 20's column alone, which was the low-churn option and
+would have meant this app grew a second dismissal system a day after growing its
+first. It was one commit old; it will never be cheaper to fold in.
+
+## 2026-09-08 — Every hint predicate is a pure function
+Because: six hints on six screens, each asking the database whether it should
+speak, is six round trips at ~606ms — on an app that spent slice 19 removing
+four. Every trigger is instead a function of facts the screen had already
+fetched for its own reasons: `staleCount` was read for the nav badge, `notes` to
+draw the list, `units` to draw the syllabus. `hintFor(place, facts, dismissed)`
+is arithmetic, and `modules/hints/hints.test.ts` proves the rules with no
+database and no browser in the room.
+Instead of: a `shouldShowHint(db, userId, id)` per screen, which is the obvious
+shape and is exactly how a hint system quietly costs a second a page.
+
+## 2026-09-08 — Dismissals ride down with the session, in parallel
+Because: the one thing that is not pure is which hints have been dismissed, and
+reading it per screen would have reintroduced the trip the pure predicates just
+avoided. `currentWorkspace()` in `lib/session.ts` now fetches the profile
+alongside the workspace in one `Promise.all` — both need `user.id`, neither needs
+the other — so it adds no waiting at all, and because that function is memoised
+the shell and the page inside it share the answer.
+Instead of: a second cached helper, which would have been one more round trip
+for the first caller on every page in the app.
+
+## 2026-09-08 — At most one hint per screen, enforced by the shape of the data
+Because: two things asking for attention is nothing asking for attention, and
+`/today` already carries the setup line from slice 20. `HintPlace` maps one
+place to at most one hint, so a screen asks "is there a hint for me" and gets a
+line or null. There is a test that no two hints claim the same place.
+Instead of: a list of hints per screen with a priority order, which is a thing to
+tune for ever and a way to end up with three lines above a page nobody came to
+read hints on.
+
+## 2026-09-08 — Two of the five hints have no link, because `/questions` is not a route
+Because: `app/(app)/(narrow)/questions/` has an `actions.ts` and no `page.tsx` —
+it has never been a route. The questions hint would have shipped a dead link,
+which is exactly the kind of thing a hint ships because nobody clicks it in
+review. It has no href now: questions are read on the note they were asked
+against, which is the screen the hint is on. The shorthand hint on `/tasks` lost
+its link for the plainer reason that a "Tasks" link on `/tasks` is furniture.
+`href` and `cta` are optional on a `Hint`, and there is a test that every href
+that does exist is a real route.
+Instead of: pointing the questions hint at `/courses` or at the note's own
+anchor, both of which are somewhere-ish rather than somewhere.
+
+## 2026-09-08 — The questions hint says what the note page does not
+Because: `/notes/[id]` already carries a permanent line explaining that you
+select a sentence and press `? Ask`. A hint repeating it would be the app saying
+the same thing twice on one screen. So the hint says the part that line leaves
+out — that an answer records which blocks and which versions it read, and goes
+out of date when they do — which is the only reason asking here differs from
+asking a chatbot.
+Instead of: dropping the hint, or restating the mechanic more loudly.
+
+## 2026-09-08 — `modules/hints` owns no table, like `modules/onboarding`
+Because: dismissals live on `profiles`, and `profiles` belongs to
+`modules/profiles` (CLAUDE.md's Never rule 2). Both `modules/hints` and
+`modules/onboarding` call through that module's `index.ts`, and neither of them
+knows what a `jsonb` column is. `modules/profiles`, in return, knows nothing
+about what any notice id *means* — a list of valid ids there would be a second
+place to remember, and the failure it would prevent costs one hint showing
+forever rather than anything a person cannot dismiss again.
+Instead of: a `hints` table, for five rows of copy that are already in a
+TypeScript file and change when the app does.
+
+## 2026-09-08 — `dismissHintAction` parses its id
+Because: a server action is a public POST endpoint, and this one writes a key
+into a `jsonb` map on `profiles`. An unparsed string would let anyone with a
+session put arbitrary keys in there. Nothing terrible follows from that, which
+is exactly why it would never be noticed. One `hintIdSchema.safeParse` and an
+unknown id is a no-op.
+Instead of: trusting it, because the component that calls it only ever passes a
+real id — which is true today and is not a property of the endpoint.
+
 ## Noticed, not fixed
 
 Things spotted outside the current slice. Do not fix them mid-slice; write them here.
@@ -3242,3 +3326,15 @@ Things spotted outside the current slice. Do not fix them mid-slice; write them 
 - **`stale_runs` is not shown anywhere.** It is a real fact about a derivation —
   "this has gone out of date four times" is worth knowing on `/review` — and it
   is currently read by one predicate in one module.
+- **`/questions` still is not a route**, and slice 21 only worked around it. There
+  is a `questions/actions.ts`, questions render on the note and course pages, and
+  there is no list of every open question anywhere. The `unresolved` query on
+  `/courses/[id]` is most of that screen already.
+- **The hint thresholds are guesses.** Five notes for search, one unit for focus,
+  one course for the shorthand. They are recorded in `modules/hints/schema.ts`
+  with the reasoning next to each, and none of them has been watched in use by a
+  person. `dismissed_notices` records *when* each was dismissed, which is the
+  data that would settle any of them.
+- **Nothing brings a dismissed hint back from the UI.** `restoreHint` exists and
+  is tested; no screen calls it. `/start` can be un-dismissed from settings and
+  hints cannot.

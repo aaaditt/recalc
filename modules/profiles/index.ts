@@ -11,14 +11,15 @@
 // would make every account on the app enumerable.
 export {
   claimUsername,
+  getDismissedNotices,
   getProfile,
+  hasDismissed,
   hasProfile,
-  isOnboardingDismissed,
   isValidUsername,
   lookupByUsername,
   normaliseUsername,
   setDisplayName,
-  setOnboardingDismissed,
+  setDismissed,
   usernameProblem,
 } from './service';
 export {

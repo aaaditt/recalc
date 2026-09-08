@@ -28,11 +28,12 @@ the "Continue with Google" button on `/login` (slice 18).
 `docs/SLICE_18_SETUP.md` §5. Needs step 1 done first, because it reuses the
 same client ID and secret.
 
-### 3. Nothing — slices 18, 19 and 20 are green
+### 3. Nothing — slices 18 to 21 are green
 
-Slice 18 is at `e1710b9` and slice 19 at `a5df597`. Slice 20 is built with
-`npm run check` passing on all 464 tests and `npm run build` clean. Migrations
-014 and 015 are applied to the remote database and both backfills have run.
+Slice 18 is at `e1710b9`, slice 19 at `a5df597`, slice 20 at `d527191`. Slice 21
+is built with `npm run check` passing on all 482 tests and `npm run build`
+clean. Migrations 014, 015 and 016 are applied to the remote database and every
+backfill has run.
 
 **Worth doing by hand once:** open `/start` and walk it. Steps 1–4 can be done
 for real. Steps 6 and 7 cannot be finished without an AI key, and they will
@@ -72,7 +73,7 @@ One slice per session (`CLAUDE.md`).
 
 Speed went first, ahead of the slice whose design was already written, so that
 the guided onboarding path would not have to be walked through at 6.6 seconds a
-press. Slices 19 and 20 are both done; start at slice 21.
+press. Slices 19, 20 and 21 are done; start at slice 22.
 
 ### Slice 19 — Speed — **DONE** (2026-09-08)
 
@@ -165,19 +166,44 @@ Also here: skipping a step is `/start?step=<id>` rather than a stored flag;
 every navigation, ~606ms each) and is reached from one line on `/today` while
 Act 1 is unfinished, plus a permanent link on `/settings/semester`.
 
-### Slice 21 — Just-in-time hints — **NEXT**
+### Slice 21 — Just-in-time hints — **DONE** (2026-09-08)
 
-The other half of what Aadit asked for under "onboarding": each feature explains
-itself the first time it becomes useful, rather than being narrated at an empty
-screen on day one. One dismissible line, in the neutral palette, in the shape
-`components/today/setup-agents.tsx` already uses.
+Five hints, one per screen, each one line in the neutral palette in the shape
+`components/today/setup-agents.tsx` already used, each dismissible for ever.
 
-Triggers must read data the screen already has, or this reintroduces the round
-trips slice 19 just removed. Storage: a dismissed-ids column on `profiles` —
-which now has `onboarding_dismissed_at` beside it, from slice 20, and the two
-should probably not end up as two unrelated mechanisms for the same idea.
+| Hint | Screen | Fires when | Link |
+|---|---|---|---|
+| what `/review` is | the app shell | anything is stale | `/review` |
+| search reads inside notes | `/notes` | 5+ notes | `/search` |
+| an answer carries a receipt | `/notes/[id]` | the note has a body | none |
+| a session logs against a unit | `/courses/[id]` | the syllabus has units | `/focus` |
+| the deadline shorthand | `/tasks` | a course exists | none |
 
-### Slice 22 — Friends
+**Every predicate is a pure function** of facts the screen had already fetched —
+`staleCount` was read for the nav badge, `notes` to draw the list, `units` to
+draw the syllabus. Six hints each asking the database whether to speak would
+have been six round trips at ~606ms, on an app that spent slice 19 removing
+four. `modules/hints/hints.test.ts` proves the rules with no database and no
+browser in the room.
+
+The one impure part — which hints are dismissed — rides down with
+`currentWorkspace()` in `lib/session.ts`, fetched in parallel with the workspace
+(both need `user.id`, neither needs the other) and memoised, so it adds no
+waiting anywhere.
+
+**Migration 016 replaces slice 20's column.** `profiles.dismissed_notices jsonb`
+is a map of notice id -> when it was dismissed; `onboarding_dismissed_at` was
+backfilled into it as the id `setup` and dropped. Two mechanisms for "I have
+seen this" was one more than the idea deserved, and it was one commit old.
+
+Two of the five hints have no link, and one of those is a bug that was caught
+rather than a preference: **`/questions` is not a route** — there is an
+`app/(app)/(narrow)/questions/actions.ts` and no `page.tsx`, and questions render
+on the note and course pages instead. The hint would have shipped a dead link.
+`href`/`cta` are optional on a `Hint` now, and a test asserts that every href
+which does exist is a real route.
+
+### Slice 22 — Friends — **NEXT**
 
 Schema settled in `docs/SLICES.md` and `docs/SCHEMA.md`. One row per pair with
 `least()/greatest()` uniqueness, and **two** directional visibility columns —

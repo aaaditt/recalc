@@ -7,14 +7,18 @@ import {
   askQuestionAction,
   setQuestionResolvedAction,
 } from '../../questions/actions';
+import { dismissHintAction } from '../../../hint-actions';
+import { HintLine } from '@/components/hints/hint-line';
 import { NoteEditor } from '@/components/notes/note-editor';
 import { NoteSummary } from '@/components/notes/note-summary';
 import { QuestionList } from '@/components/questions/question-list';
 import { dayTitle } from '@/lib/calendar';
 import { colourForCourse, courseDot } from '@/lib/course-colours';
+import { currentWorkspace } from '@/lib/session';
 import { createClient } from '@/lib/supabase/server';
 import { localDateKey, localTimeZone } from '@/lib/time';
 import { getCourses } from '@/modules/courses';
+import { hintFor } from '@/modules/hints';
 import { getNoteDocument, getStandaloneNote } from '@/modules/notes';
 import { getQuestionsForNote } from '@/modules/questions';
 import { getNoteSummary } from '@/modules/recalc';
@@ -53,6 +57,14 @@ export default async function NotePage({
   const index = courses.findIndex((course) => course.id === standalone?.course_id);
   const course = index === -1 ? null : courses[index];
 
+  // Slice 21. `note.nodes` is empty until the editor has autosaved something, so
+  // this waits for there to be a note worth asking about. Already fetched; the
+  // dismissals came with the session. No query.
+  const session = await currentWorkspace();
+  const hint = session
+    ? hintFor('note', { noteHasBody: note.nodes.length > 0 }, session.dismissed)
+    : null;
+
   return (
     <>
       <header className="pb-2">
@@ -89,6 +101,15 @@ export default async function NotePage({
         into a deadline that remembers where it came from, or{' '}
         <span className="font-mono">? Ask</span> to put a question against it.
       </p>
+
+      {/* Under the line above, and saying the thing it does not: that line is
+          about which keys to press, this one is about why the answer is worth
+          having. It goes away the first time it is dismissed. */}
+      {hint ? (
+        <div className="pt-4">
+          <HintLine hint={hint} dismiss={dismissHintAction.bind(null, hint.id)} />
+        </div>
+      ) : null}
 
       <section className="pt-8">
         <p className="pb-3 font-mono text-label text-faint uppercase">Summary</p>
