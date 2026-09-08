@@ -109,6 +109,15 @@ export default async function TimetablePage({
             >
               Courses
             </Link>
+            {/* Slice 22. This is where comparing timetables will start from,
+                and the nav is full at six columns (docs/DECISIONS.md, slice 13),
+                so it is a link here rather than a seventh destination. */}
+            <Link
+              href="/friends"
+              className="text-13 text-muted underline-offset-4 hover:text-ink hover:underline"
+            >
+              Friends
+            </Link>
           </>
         }
       />

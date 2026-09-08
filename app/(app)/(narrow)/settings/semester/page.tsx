@@ -59,6 +59,12 @@ export default async function SemesterPage({
               Set up
             </Link>
             <Link
+              href="/friends"
+              className="text-13 text-muted underline-offset-4 hover:text-ink hover:underline"
+            >
+              Friends
+            </Link>
+            <Link
               href="/settings/agents"
               className="text-13 text-muted underline-offset-4 hover:text-ink hover:underline"
             >

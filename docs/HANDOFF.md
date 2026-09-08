@@ -28,12 +28,17 @@ the "Continue with Google" button on `/login` (slice 18).
 `docs/SLICE_18_SETUP.md` §5. Needs step 1 done first, because it reuses the
 same client ID and secret.
 
-### 3. Nothing — slices 18 to 21 are green
+### 3. Nothing — slices 18 to 22 are green
 
-Slice 18 is at `e1710b9`, slice 19 at `a5df597`, slice 20 at `d527191`. Slice 21
-is built with `npm run check` passing on all 482 tests and `npm run build`
-clean. Migrations 014, 015 and 016 are applied to the remote database and every
-backfill has run.
+Slice 18 is at `e1710b9`, 19 at `a5df597`, 20 at `d527191`, 21 at `10982a7`.
+Slice 22 is built with `npm run check` passing on all 502 tests and
+`npm run build` clean. Migrations 014 to 017 are applied to the remote database
+and every backfill has run.
+
+**Worth doing by hand once:** `/friends` cannot be tried alone. It needs a second
+account — sign up with another email in a private window, claim a username there,
+and add it from your own. That is also the only way to see the two share levels
+behave independently, which is the thing the slice exists to get right.
 
 **Worth doing by hand once:** open `/start` and walk it. Steps 1–4 can be done
 for real. Steps 6 and 7 cannot be finished without an AI key, and they will
@@ -73,7 +78,7 @@ One slice per session (`CLAUDE.md`).
 
 Speed went first, ahead of the slice whose design was already written, so that
 the guided onboarding path would not have to be walked through at 6.6 seconds a
-press. Slices 19, 20 and 21 are done; start at slice 22.
+press. Slices 19 to 22 are done; start at slice 23.
 
 ### Slice 19 — Speed — **DONE** (2026-09-08)
 
@@ -203,21 +208,53 @@ on the note and course pages instead. The hint would have shipped a dead link.
 `href`/`cta` are optional on a `Hint` now, and a test asserts that every href
 which does exist is a real route.
 
-### Slice 22 — Friends — **NEXT**
+### Slice 22 — Friends — **DONE** (2026-09-08)
 
-Schema settled in `docs/SLICES.md` and `docs/SCHEMA.md`. One row per pair with
-`least()/greatest()` uniqueness, and **two** directional visibility columns —
-what I show you and what you show me are independent choices. Lookup is by exact
-username through `find_profile_by_username`; there is no search, deliberately.
-`profiles_select` widens to accepted friends here and nowhere else.
+`/friends`: add by exact username, accept or decline, and choose per friend
+between `none`, `busy` (times only) and `full` (times, course code and room).
+One row per pair, unique on `least()/greatest()` so (a,b) and (b,a) collide.
 
-### Slice 23 — Compare timetables
+**One thing in the plan changed, and slice 23 needs to know.** The plan said
+`profiles_select` widens to accepted friends. **It does not.** Slice 21 added
+`profiles.dismissed_notices`, and a policy is row-level — widening `select`
+hands a friend the whole row, every column today and every column added later.
+Reading another person goes through `my_friendships()`, a `security definer`
+function that names the three fields they may see, exactly like
+`find_profile_by_username`. Slice 23 should copy that shape, not the old note.
+
+**What each side shares is enforced by a trigger, not a policy.** Both share
+levels live on the one row, so `friendships_update` has to let either party
+write it; `friendships_guard` is what says each side may only change their own
+column. Same for "only the person asked can accept", "the two people never
+change", and "status only goes pending → accepted". A policy cannot say any of
+those, because a policy is about rows and all four are about columns and values.
+
+**The tests use three real signed-in sessions on the anon key.** The guard reads
+`auth.uid()`, which is null for the service role, so none of its rules fire for
+it — which is right (service role bypasses RLS by design) and is why a
+service-role test here would prove nothing. Slice 18's lesson, applied.
+
+There is no `declined` status: refusing deletes the row, so declining,
+cancelling and unfriending are one act. Nothing is kept, so the same pair can
+start again.
+
+`/friends` has no nav entry — the nav is full at six columns — and is linked from
+the `/timetable` header and from `/settings/semester`.
+
+### Slice 23 — Compare timetables — **NEXT**
 
 **Do not widen `sessions_select`.** `sessions` has no `workspace_id` — it reaches
 a workspace only through `courses` — so that policy is three tables deep already
 and a mistake in it leaks notes. Use a second `security definer` function that
 checks for an accepted friendship, reads the visibility column *for the correct
 direction*, and returns times only, or times plus course code and room.
+
+Slice 22 left two things pointed at this one. `modules/friends` exports
+`whatTheyShow(friendship)`, which returns `they_share` and exists so there is one
+place to be right about the direction rather than a `case` in slice 23. And the
+levels are already named and described in `SHARE_LEVELS`: `none`, `busy` (times
+only) and `full` (times, course code and room), which is exactly the two shapes
+this slice has to return plus the case where it returns nothing.
 
 ### Not designed — the all-day timetable
 

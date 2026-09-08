@@ -2605,6 +2605,94 @@ unknown id is a no-op.
 Instead of: trusting it, because the component that calls it only ever passes a
 real id — which is true today and is not a property of the endpoint.
 
+## 2026-09-08 — `profiles_select` was NOT widened to friends, against the plan
+Because: migration 013 and `docs/SCHEMA.md` both said this slice would widen it,
+and the reason not to arrived after they were written. Slice 21 added
+`profiles.dismissed_notices`. A policy is row-level, so widening `select` on
+`profiles` hands an accepted friend the whole row — every column on it today and
+every column added to it later. Which tips somebody has dismissed is nobody
+else's business, and "we will remember to think about this every time we add a
+column to profiles" is not a boundary, it is a hope. `my_friendships()` is a
+`security definer` function that names the three fields another person may see.
+Instead of: widening the policy as planned, which was correct when it was
+written and stopped being correct one slice ago. `friendships.test.ts` asserts
+that a friend reading `profiles` directly gets nothing back.
+
+## 2026-09-08 — One row per pair, unique on `least()/greatest()`
+Because: two rows, one per direction, means two things that can disagree about
+whether you are friends, and there is no answer to "she accepted but his row
+still says pending" that is not a repair job. `least`/`greatest` on the two uuids
+gives the pair an order that does not depend on who asked, so (a,b) and (b,a)
+collide on the index — which is what stops two people who add each other on the
+same evening ending up with two friendships and a screen that lists each of them
+twice.
+Instead of: a check constraint forcing `requester_id < addressee_id`, which
+would have thrown away *who asked whom* — and that is the difference between
+"waiting on you" and "asked", which is the only thing the screen has to get
+right.
+
+## 2026-09-08 — What each side shares is enforced by a trigger, not a policy
+Because: Postgres policies are row-level. `friendships_update` can say "this row
+is yours to touch" and cannot say "and that column is theirs" — and both share
+levels live on the one row, so the policy has to allow both parties to update it.
+`friendships_guard` is where the four rules live: the two people never change,
+only the person asked can accept, status only goes pending → accepted, and each
+side may change only their own `*_shares` column. That last one is the privacy
+boundary of the whole slice: without it, one press could make somebody else share
+their timetable in full.
+Instead of: enforcing it in `modules/friends`, which is a rule a POST walks past —
+the anon key ships to the browser and the service is not in the request path.
+
+## 2026-09-08 — The guard is not `security definer`, and the tests are not service-role
+Because: the guard checks the caller's identity, so it wants the caller's rights.
+`auth.uid()` is null for the service role and every `<>` against null is null
+rather than true, so none of its rules fire for it — which is correct, since the
+service role bypasses RLS by design, and is exactly why every assertion in
+`friendships.test.ts` runs as one of three real signed-in accounts on the anon
+key. Slice 18 learned this the hard way: a policy test written with the service
+key passes whether the policy exists or not.
+Instead of: a service-role test that would have been faster to write, shorter,
+and worth nothing.
+
+## 2026-09-08 — There is no `declined` status; a refusal is a deleted row
+Because: a stored refusal is a record of a small social rejection, and keeping it
+means deciding when to show it, when to expire it, and whether the other person
+may see it. Deleting means the requester's screen simply stops saying "pending",
+and they can ask again — which is what a person would do anyway. It also makes
+declining, cancelling and unfriending one act with one statement and one policy,
+so there is one thing to get right instead of three.
+Instead of: `status = 'declined'`, which is the obvious fourth value and buys a
+feature nobody asked for at the cost of three decisions nobody wants to make.
+
+## 2026-09-08 — Both sides default to `busy` on acceptance
+Because: accepting a friend request is itself the consent, and a default of
+`none` would make accepting one do nothing at all — which teaches people that
+the accept button is broken. `busy` says *when* you are in a class and nothing
+about which, so it is enough to find a shared free hour without telling anybody
+what you study.
+Instead of: defaulting to `none` and making both people set it, which is the
+privacy-conservative answer and produces an app where the feature appears not to
+work until you have found a setting.
+
+## 2026-09-08 — `my_friendships()` names the fields from the reader's point of view
+Because: every bug this table makes available is a bug about reading the wrong
+side. So the function returns `i_share` and `they_share` rather than
+`requester_shares` and `addressee_shares`, and a `direction` of `incoming` or
+`outgoing` rather than two ids to compare. A component cannot read the wrong
+column if the wrong column is not in the shape it was handed. Slice 23 reads
+`they_share` and nothing else.
+Instead of: returning the row and letting each caller work out which side it is
+on — six chances to get it backwards, and the failure mode is showing somebody's
+timetable to somebody who was not shown it.
+
+## 2026-09-08 — Adding a friend is still exact-username, with no search
+Because: unchanged from slice 18 and worth restating where somebody will look for
+it. A lookup permissive enough to find `@aadit` from `aad` is permissive enough
+to enumerate every account on the app, and that cannot be taken back once other
+people have signed up. `find_profile_by_username` is exact match, one row, never
+yourself. The screen says so out loud rather than looking like a missing feature.
+Instead of: a search box, which is the thing every user will ask for first.
+
 ## Noticed, not fixed
 
 Things spotted outside the current slice. Do not fix them mid-slice; write them here.
@@ -3338,3 +3426,20 @@ Things spotted outside the current slice. Do not fix them mid-slice; write them 
 - **Nothing brings a dismissed hint back from the UI.** `restoreHint` exists and
   is tested; no screen calls it. `/start` can be un-dismissed from settings and
   hints cannot.
+- **`/friends` is the sixth screen reached by a link rather than a nav
+  destination** — after `/inbox`, `/settings/*`, `/timetable`,
+  `/timetable/periods`, `/courses/<id>/settings` and `/start`. It is linked from
+  the timetable header and from settings. This is the same complaint slices 16,
+  17 and 18 recorded, and the nav being full at six columns is now the reason
+  seven things are hidden behind other screens.
+- **Nothing tells you a friend request is waiting.** The `/review` badge exists
+  and this has no equivalent, so an incoming request is invisible until you
+  happen to open `/friends`. It belongs in whatever "one needs-you surface"
+  turns out to be — the fourth note in this file asking for the same thing.
+- **A blocked/report path does not exist.** Declining deletes the row and the
+  same person can ask again immediately. At one user this is nothing; it is the
+  first thing that matters if this app ever has strangers on it.
+- **`sendRequest` reads the whole friendship list to pre-check.** One extra round
+  trip on a button pressed a handful of times a term, and the unique index is
+  what actually decides — but it is a list fetched to answer a question about one
+  row.

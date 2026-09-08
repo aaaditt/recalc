@@ -250,12 +250,61 @@ find_profile_by_username(p_username text)
 A policy permissive enough to find `@aadit` by name is permissive enough to list
 every account on the app. Exact-string guessing is still possible and is an
 accepted limit (docs/DECISIONS.md); prefix enumeration is not, and
-`modules/profiles/username.test.ts` is what keeps it that way.
+`modules/profiles/username.test.ts` is what keeps it that way. Slice 22 adds
+friends on top of this function and adds no search of its own.
 
-Slice 19 widens `profiles_select` to accepted friends. Slice 20 widens nothing:
-comparing timetables goes through a second `security definer` function, because
-`sessions` reaches a workspace only through `courses` and that policy is three
-tables deep already.
+**Nothing widens `profiles_select`, and that is a change of plan.** Slice 22 was
+going to widen it to accepted friends; it does not. Slice 21 added
+`dismissed_notices` to this table, and a policy is row-level — widening `select`
+hands a friend every column on the row, today's and every one added later.
+Reading another person goes through a `security definer` function that names the
+fields, exactly as `find_profile_by_username` does:
+
+```sql
+my_friendships()
+  returns table (id, other_id, other_username, other_display_name,
+                 status, direction, i_share, they_share, created_at)
+  -- every friendship the caller is in, at any status
+  -- named from the caller's point of view: `i_share` is what I show them
+```
+
+Slice 23 widens nothing either: comparing timetables goes through a second
+`security definer` function, because `sessions` reaches a workspace only through
+`courses` and that policy is three tables deep already.
+
+## Friends
+
+```sql
+create table friendships (
+  id            uuid primary key default gen_random_uuid(),
+  requester_id  uuid not null references profiles(id) on delete cascade,
+  addressee_id  uuid not null references profiles(id) on delete cascade,
+  status        text not null default 'pending',   -- pending | accepted
+  -- What each side shows the other. Two independent decisions.
+  --   none | busy (times only) | full (times, course code and room)
+  requester_shares text not null default 'busy',
+  addressee_shares text not null default 'busy',
+  created_at    timestamptz not null default now(),
+  updated_at    timestamptz not null default now()
+);
+
+-- One pair, once, whichever way round it was asked.
+create unique index friendships_pair_key
+  on friendships (least(requester_id, addressee_id), greatest(requester_id, addressee_id));
+```
+
+There is no `declined` status: a refusal deletes the row, so declining,
+cancelling and unfriending are one act with one policy.
+
+**What each side may change is a trigger, not a policy.** Policies are
+row-level, and both share levels are on the one row, so `friendships_update`
+has to let either party write it. `friendships_guard` is what says the two
+people never change, that only the person asked can accept, that status only
+goes `pending → accepted`, and that each side may change only their own
+`*_shares` column. That last rule is the privacy boundary of the feature.
+`modules/friends/friendships.test.ts` proves all four with three real signed-in
+sessions on the anon key — the service-role key bypasses RLS, so a test written
+with it would pass whether any of this existed or not.
 
 ## Agents (bring your own key)
 

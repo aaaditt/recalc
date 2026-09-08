@@ -584,6 +584,54 @@ export type Database = {
           },
         ]
       }
+      friendships: {
+        Row: {
+          addressee_id: string
+          addressee_shares: string
+          created_at: string
+          id: string
+          requester_id: string
+          requester_shares: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          addressee_id: string
+          addressee_shares?: string
+          created_at?: string
+          id?: string
+          requester_id: string
+          requester_shares?: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          addressee_id?: string
+          addressee_shares?: string
+          created_at?: string
+          id?: string
+          requester_id?: string
+          requester_shares?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "friendships_addressee_id_fkey"
+            columns: ["addressee_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "friendships_requester_id_fkey"
+            columns: ["requester_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       google_accounts: {
         Row: {
           address: string
@@ -1119,6 +1167,20 @@ export type Database = {
           display_name: string
           id: string
           username: string
+        }[]
+      }
+      my_friendships: {
+        Args: never
+        Returns: {
+          created_at: string
+          direction: string
+          i_share: string
+          id: string
+          other_display_name: string
+          other_id: string
+          other_username: string
+          status: string
+          they_share: string
         }[]
       }
       pending_embeddings: {
