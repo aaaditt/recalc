@@ -3794,3 +3794,64 @@ container it read as a separate object rather than as that band's density.
   save against a database ~600ms away) only disables its button. A pressed
   button that goes quiet for a second is the one place the app still feels
   unfinished, and it is the obvious next craft pass.
+
+## 2026-09-09 — The email sync cron runs once a day at 02:00 UTC, not hourly
+Because: the first production deploy was rejected outright — Vercel's Hobby plan
+refuses any cron expression that fires more than once a day, and `0 * * * *` is
+a deploy-time error, not a runtime one. The site could not go live at all until
+this changed. 02:00 UTC is 06:00 in `Asia/Dubai`, which is the hour
+`app/api/cron/sync-email/route.ts` already names in its own comment ("nobody is
+signed in at 6am").
+
+The cost is real but small today: an email arriving at 9am is not seen by the
+proposals queue until the following morning. It is smaller still right now,
+because `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are placeholders in
+production, so `listUserIdsWithGmail` returns nobody and the job is a no-op
+until real credentials are registered.
+
+Instead of: upgrading to Pro for one cron on a single-user app, or deleting the
+cron entirely — which would have left `CRON_SECRET` configured and the route
+live with nothing calling it, and made the sync look broken rather than slow.
+
+Revisit when: Gmail credentials are real *and* the once-a-day delay is actually
+felt. The fix then is either Pro, or an external pinger (cron-job.org, a GitHub
+Action) sending `Authorization: Bearer $CRON_SECRET` — the route already
+authenticates that way and does not care who calls it.
+
+## 2026-09-09 — `/api/cron` is public to the proxy, and defended by its own secret
+Because: the first production smoke test found `/api/cron/sync-email` answering
+**307 to /login**. The proxy matcher covers `/api/*`, `isPublic` did not name the
+cron path, and Vercel Cron sends `Authorization: Bearer $CRON_SECRET` with no
+session cookie — so the scheduled sync could never once have reached its handler.
+It was invisible locally, where nothing calls the route on a timer.
+
+This contradicted the route's own documented intent: "It runs with no session —
+nobody is signed in at 6am — so it uses the service-role client." The handler was
+written for sessionless access and already enforces it, returning 401 without the
+bearer token and 503 when `CRON_SECRET` is unset. The proxy was the only thing
+standing in front of that, and it was standing in front of Vercel too.
+
+Instead of: leaving it, which would have meant shipping a cron in `vercel.json`
+that provably cannot fire; or moving the secret check into the proxy, which would
+put the one route's auth in two places.
+
+Note this widens `isPublic` by a prefix, not a route: any future `/api/cron/*`
+handler is reachable unauthenticated by default and **must** do its own check.
+
+### Noticed, not fixed — during the first deploy (2026-09-09)
+- **`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` are placeholders in production.**
+  They satisfy `z.string().min(1)` so the app boots, but Drive connect and Gmail
+  sync are dead in prod exactly as they are locally. The redirect URI to register
+  is `https://recalc-drab.vercel.app/api/auth/google/callback`.
+- **`NEXT_PUBLIC_GOOGLE_PICKER_API_KEY` was not set on Vercel** — it is empty in
+  `.env.local`, and `lib/env.ts` treats empty and absent as the same thing.
+- **`private.trip_invite_attempts` sits in this Supabase project** with RLS on and
+  no policy. It belongs to a different app of Aadit's sharing the project; the
+  Supabase security advisor reports it on every run of this one.
+- **Four `SECURITY DEFINER` functions are executable by `anon`** —
+  `my_friendships`, `friend_timetable`, `find_profile_by_username`,
+  `mark_profile_claimed`. This is the slice 22/23 design working as intended (they
+  scope internally to `auth.uid()`), but the advisor flags them and nobody has
+  written down that the flag is expected. Now it is.
+- **Leaked-password protection is off** in Supabase Auth. Slice 24 added a
+  password; HaveIBeenPwned checking is a dashboard toggle nobody has flipped.

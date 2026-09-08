@@ -41,10 +41,16 @@ export default async function proxy(request: NextRequest) {
   // The web app manifest is fetched by the browser without credentials, so it
   // has to be reachable signed out or the app is not installable. It names
   // four URLs and an icon; there is nothing in it to protect.
+  // The scheduled sync is called by Vercel Cron at 02:00 UTC, when nobody is
+  // signed in. It carries `Authorization: Bearer $CRON_SECRET` and no cookie,
+  // so the gate below would redirect it to /login and the job would never run.
+  // It is public to this proxy only — the route itself refuses anything without
+  // the shared secret with a 401, and 503s if the secret is unset.
   const isPublic =
     path.startsWith('/login') ||
     path.startsWith('/auth') ||
     path.startsWith('/styleguide') ||
+    path.startsWith('/api/cron') ||
     path === '/manifest.json';
 
   if (!user && !isPublic) {
