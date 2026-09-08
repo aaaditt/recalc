@@ -1,3 +1,5 @@
+import Link from 'next/link';
+
 import { CardDivider } from '@/components/ui/card';
 import { cx } from '@/lib/cx';
 import { SHARE_LEVELS, type Friendship } from '@/modules/friends';
@@ -71,6 +73,19 @@ export function FriendRow({
     <div className="px-4 py-3">
       <div className="flex items-start gap-3">
         <Name friendship={friendship} />
+
+        {/* Slice 23. Only when there is something to see: at `none` this would
+            go to a screen that exists to say "nothing to compare", and offering
+            it would read as the app not knowing what it just told you. */}
+        {friendship.they_share === 'none' ? null : (
+          <Link
+            href={`/friends/${friendship.other_username}`}
+            className="shrink-0 text-13 text-muted underline underline-offset-4 transition-colors duration-100 hover:text-ink"
+          >
+            Compare
+          </Link>
+        )}
+
         <form action={remove}>
           <Quiet>Remove</Quiet>
         </form>

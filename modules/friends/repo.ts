@@ -1,6 +1,12 @@
 import type { PostgrestError, SupabaseClient } from '@supabase/supabase-js';
 
-import { friendshipSchema, type Friendship, type ShareLevel } from './schema';
+import {
+  friendClassSchema,
+  friendshipSchema,
+  type FriendClass,
+  type Friendship,
+  type ShareLevel,
+} from './schema';
 
 // The only file that touches the friendships table. CLAUDE.md's Never rule 2.
 //
@@ -119,4 +125,28 @@ export async function sideOf(
   if (data.requester_id === userId) return 'requester';
   if (data.addressee_id === userId) return 'addressee';
   return null;
+}
+
+/**
+ * One friend's week, at whatever level they share it.
+ *
+ * Through `friend_timetable` rather than a select, and `sessions_select` is
+ * deliberately unchanged: `sessions` reaches a workspace only through `courses`,
+ * so that policy is already two joins deep and widening it to friendships would
+ * make it four tables and a direction-dependent column read — running on every
+ * row of every query anyone ever writes against `sessions`. A mistake in a
+ * policy that shape does not fail loudly; it returns somebody else's rows.
+ * Migration 018 says the same thing at more length.
+ *
+ * Returns an empty list for `none`, for a pending request and for a stranger.
+ * All three are the same answer from here, and the screen never has to tell them
+ * apart from the data — it already knows the level from `my_friendships()`.
+ */
+export async function listFriendTimetable(
+  db: SupabaseClient,
+  friendId: string
+): Promise<FriendClass[]> {
+  const { data, error } = await db.rpc('friend_timetable', { p_friend_id: friendId });
+  if (error) throw new Error(`friends.listFriendTimetable: ${error.message}`);
+  return (Array.isArray(data) ? data : []).map((row) => friendClassSchema.parse(row));
 }

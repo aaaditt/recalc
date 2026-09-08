@@ -268,9 +268,21 @@ my_friendships()
   -- named from the caller's point of view: `i_share` is what I show them
 ```
 
-Slice 23 widens nothing either: comparing timetables goes through a second
+Slice 23 widened nothing either. Comparing timetables goes through a second
 `security definer` function, because `sessions` reaches a workspace only through
-`courses` and that policy is three tables deep already.
+`courses` and that policy is two joins deep already — widening it to friendships
+would make it four tables and a direction-dependent column read, running on every
+query anyone ever writes against `sessions`:
+
+```sql
+friend_timetable(p_friend_id uuid)
+  returns table (weekday, starts_at, ends_at, course_code, room)
+  -- accepted friendships only; a pending request is not consent
+  -- reads what THEY share, which is requester_shares when they asked
+  --   and addressee_shares when they did not
+  -- course_code and room are NULL at 'busy' — never omitted, so the
+  --   shape of the row does not give the level away
+```
 
 ## Friends
 

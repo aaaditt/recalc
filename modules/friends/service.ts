@@ -9,6 +9,7 @@ import {
   NoSuchUser,
   TheyAskedYou,
   shareLevelSchema,
+  type FriendClass,
   type FriendLists,
   type Friendship,
   type ShareLevel,
@@ -141,4 +142,35 @@ export async function setShareLevel(
  */
 export function whatTheyShow(friendship: Friendship): ShareLevel {
   return friendship.they_share;
+}
+
+/**
+ * One friend's week, and the friendship it came from — slice 23.
+ *
+ * Both in one call because a screen that has one without the other is a screen
+ * that has to guess. An empty list means three different things — they share
+ * `none`, they have nothing timetabled, or this is not a friend at all — and
+ * only the friendship tells them apart. The database refuses the last of those
+ * regardless of what this function is told.
+ *
+ * Two sequential round trips, and they cannot be made one: the second needs the
+ * friend's id, which only the first knows. At ~606ms each that is the price of
+ * this page, and it is paid once when it opens rather than per class.
+ */
+export async function getFriendWeek(
+  db: SupabaseClient,
+  username: string
+): Promise<{ friendship: Friendship; classes: FriendClass[] } | null> {
+  const friendship = (await repo.listMine(db)).find(
+    (row) => row.other_username.toLowerCase() === username.trim().replace(/^@/, '').toLowerCase()
+  );
+
+  // Not a friend, or only asked. Null rather than an empty week, because "we are
+  // not friends" and "they show me nothing" are different sentences.
+  if (!friendship || friendship.status !== 'accepted') return null;
+
+  return {
+    friendship,
+    classes: await repo.listFriendTimetable(db, friendship.other_id),
+  };
 }

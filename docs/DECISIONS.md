@@ -2693,6 +2693,82 @@ people have signed up. `find_profile_by_username` is exact match, one row, never
 yourself. The screen says so out loud rather than looking like a missing feature.
 Instead of: a search box, which is the thing every user will ask for first.
 
+## 2026-09-08 — `sessions_select` was not widened, and `friend_timetable` is why
+Because: `sessions` has no `workspace_id`. It reaches a workspace only through
+`courses`, so the existing policy is already two joins deep — widening it to
+friendships would make it four tables and a direction-dependent column read,
+expressed as a `using` clause that runs on every row of every query anyone ever
+writes against `sessions`, including the ones with nothing to do with friends. A
+mistake in a policy that shape does not fail loudly; it returns rows, and the
+rows are somebody else's. So the policy is untouched and there is one
+`security definer` function whose whole body fits on a screen — the same choice
+migration 013 made for `find_profile_by_username`, for the same reason.
+Instead of: the policy, which is the obvious move and the one that would have
+made every future query against `sessions` a thing to think carefully about.
+
+## 2026-09-08 — The direction is the invariant, and it is tested with the two sides set differently
+Because: `friendships` holds two independent decisions on one row, and what Bob
+may see is what ALICE shares — `requester_shares` when she asked, and
+`addressee_shares` when she did not. Read the wrong one and Bob sees Alice's week
+on the strength of a choice *he* made about his own, and nothing on the screen
+looks wrong. `compare.test.ts` sets Alice to `none` and Bob to `full`, asserts
+both directions, then swaps them and asserts both again — so a function that
+reads the caller's column, and one that reads `requester_shares` unconditionally,
+both fail.
+Instead of: a test with both sides on the same level, which is the natural way to
+write it and passes against every wrong implementation.
+
+## 2026-09-08 — `busy` returns nulls rather than omitting columns
+Because: the shape of the result is then the same at every sharing level, so
+nothing downstream can tell the levels apart by which fields came back, and
+nothing can read a code that "happened to be there". `compare.test.ts` asserts
+the key sets are identical at `busy` and `full`.
+Instead of: two functions or a narrower row for `busy`, which leaks the level
+through the shape and gives every caller a second case to get right.
+
+## 2026-09-08 — A friend's classes are placed by start time, never by period id
+Because: their period ids come from their grid and mean nothing on yours — two
+people can number and time their periods differently. `buildCompare` matches on
+the clock, which is the only thing two timetables share, and anything of theirs
+that fits no row of yours comes back in `unplaced` and is listed under the grid.
+Silently dropping it would turn an hour they are busy into an hour the screen
+says you are both free, which is the one thing this screen must never say.
+Instead of: joining on `period_id`, which would have quietly placed their third
+period in your third period whatever the times were.
+
+## 2026-09-08 — `buildCompare` is pure, in `lib/`, like the optimistic reducer
+Because: "you are both free at 11 on Tuesday" is a claim somebody is about to act
+on, and the test runner collects `lib/**` and has no browser in it. Same reasoning
+as slice 19's `applyPending` and slice 21's `hintFor`: the rule that matters lives
+where it can be tested, and the component draws.
+Instead of: working it out inside the grid component, where the interesting case —
+a class that could not be placed — has no test.
+
+## 2026-09-08 — A separate read-only grid rather than a flag on the existing one
+Because: `timetable-grid.tsx` exists so that every cell is a button. This grid has
+nothing to press, and half of what it draws belongs to somebody who gave nobody
+permission to edit it. One `readOnly` prop would have made the two jobs share a
+component and, eventually, share a bug — and the shared bug would be an edit
+control on another person's week.
+Instead of: a flag, which is less code today.
+
+## 2026-09-08 — A stranger's compare URL is a 404, not an explanation
+Because: "you are not friends with this person" confirms that the person exists.
+`/friends/<username>` for anyone who is not an accepted friend behaves exactly as
+it does for a username nobody has. The database refuses either way — the check is
+inside `friend_timetable` — so this is only about what the screen says.
+Instead of: a friendlier message, which is the kind of helpfulness that turns a
+username guess into a username confirmation.
+
+## 2026-09-08 — Their blocks are grey, and the shared free hours are what is coloured
+Because: the question this screen answers is "when are we both free", not "what
+are they studying". Your classes keep their course colours, theirs are flat
+neutral — they are somebody else's and should not look like yours — and the free
+cells carry `--ok-bg`, which is the only place in this app that colour means
+something good rather than something needing attention.
+Instead of: two grids side by side, which is the literal reading of "compare
+timetables" and makes the eye do the intersection by hand.
+
 ## Noticed, not fixed
 
 Things spotted outside the current slice. Do not fix them mid-slice; write them here.
@@ -3443,3 +3519,18 @@ Things spotted outside the current slice. Do not fix them mid-slice; write them 
   trip on a button pressed a handful of times a term, and the unique index is
   what actually decides — but it is a list fetched to answer a question about one
   row.
+- **The compare screen is two sequential round trips** — the friendship, then the
+  timetable, because the second needs the friend's id that only the first knows.
+  At ~606ms each that is the price of opening it. It could be one function that
+  returns both, which is a smaller change than it sounds.
+- **`friend_timetable` ignores `valid_from` / `valid_until` on a session**, exactly
+  as `/timetable` does. A class that ended in week 4 still shows in a friend's
+  week. Same bug in both places, and it should be fixed in both at once.
+- **There is no term-alignment check.** If two people are in different terms the
+  grids are compared anyway, and "both free" would be true for a reason nobody
+  meant. One workspace's `term_start` against the other's is the check, and it
+  needs the friend's term, which `friend_timetable` deliberately does not return.
+- **Nothing anywhere shows that somebody looked at your timetable**, and the
+  compare screen says so out loud ("they have not been told you looked"). That is
+  honest today and is the kind of thing worth deciding on purpose before there is
+  more than one user.

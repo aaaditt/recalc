@@ -22,6 +22,7 @@
 //     later. `my_friendships()` names the three fields another person may see.
 export {
   acceptRequest,
+  getFriendWeek,
   getFriends,
   removeFriendship,
   sendRequest,
@@ -35,10 +36,12 @@ export {
   SHARE_LEVELS,
   TheyAskedYou,
   directionSchema,
+  friendClassSchema,
   friendshipSchema,
   friendshipStatusSchema,
   shareLevelSchema,
   type Direction,
+  type FriendClass,
   type FriendLists,
   type Friendship,
   type FriendshipStatus,

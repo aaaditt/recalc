@@ -2,11 +2,13 @@ import { describe, it, expect } from 'vitest';
 
 import {
   applyPending,
+  buildCompare,
   buildGrid,
   cellKey,
   isPending,
   pendingClass,
   PENDING_PREFIX,
+  type FriendBlock,
   type PendingEdit,
   type TimetableClass,
   type TimetablePeriod,
@@ -201,5 +203,106 @@ describe('an optimistic class is drawn in the cell that was clicked', () => {
     );
     expect(isPending(saved())).toBe(false);
     expect(item.room).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Slice 23 — two weeks side by side
+// ---------------------------------------------------------------------------
+//
+// "Both free" is a claim the screen makes to somebody who is about to act on it,
+// which is a higher bar than most arithmetic in a UI. The two ways it goes wrong
+// are dropping one of their classes on the floor, and placing one in the wrong
+// row — and both of them produce a free hour that is not free.
+
+function block(over: Partial<FriendBlock> = {}): FriendBlock {
+  return {
+    weekday: TUESDAY,
+    startsAt: '07:30:00',
+    endsAt: '08:20:00',
+    code: null,
+    room: null,
+    ...over,
+  };
+}
+
+describe('a shared free hour is only shown when it is really free', () => {
+  const periods = [PERIOD_ONE, PERIOD_TWO];
+
+  function cellAt(
+    rows: ReturnType<typeof buildCompare>['rows'],
+    periodId: string,
+    weekday: number
+  ) {
+    return rows.flat().find((cell) => cell.period.id === periodId && cell.weekday === weekday);
+  }
+
+  it('is free when neither of you has anything', () => {
+    const { rows } = buildCompare(periods, [], []);
+    expect(rows.flat().every((cell) => cell.bothFree)).toBe(true);
+  });
+
+  it('is not free when only you are busy', () => {
+    const { rows } = buildCompare(periods, [saved()], []);
+    expect(cellAt(rows, PERIOD_ONE.id, TUESDAY)?.bothFree).toBe(false);
+    expect(cellAt(rows, PERIOD_TWO.id, TUESDAY)?.bothFree).toBe(true);
+  });
+
+  it('is not free when only they are busy', () => {
+    const { rows } = buildCompare(periods, [], [block()]);
+    expect(cellAt(rows, PERIOD_ONE.id, TUESDAY)?.bothFree).toBe(false);
+    expect(cellAt(rows, PERIOD_ONE.id, TUESDAY)?.theirs).toHaveLength(1);
+  });
+
+  it('places their class by its start time, never by a period id', () => {
+    // Their period ids come from their own grid and mean nothing on yours. Two
+    // people can number their periods differently, so the clock is the only
+    // thing the two timetables share.
+    const { rows, unplaced } = buildCompare(periods, [], [
+      block({ startsAt: PERIOD_TWO.startsAt, endsAt: PERIOD_TWO.endsAt, weekday: 3 }),
+    ]);
+
+    expect(unplaced).toHaveLength(0);
+    expect(cellAt(rows, PERIOD_TWO.id, 3)?.theirs).toHaveLength(1);
+    expect(cellAt(rows, PERIOD_ONE.id, 3)?.theirs).toEqual([]);
+  });
+
+  it('NEVER drops a class it could not place', () => {
+    // The dangerous failure. A class of theirs at a time your grid has no row
+    // for must come back in `unplaced` — quietly ignoring it turns an hour they
+    // are busy into an hour the screen says you are both free.
+    const odd = block({ startsAt: '13:05:00', endsAt: '13:55:00' });
+    const { rows, unplaced } = buildCompare(periods, [], [odd]);
+
+    expect(unplaced).toEqual([odd]);
+    // And nothing was invented in a row it does not belong to.
+    expect(rows.flat().every((cell) => cell.theirs.length === 0)).toBe(true);
+  });
+
+  it('keeps a weekend class off a Monday-to-Friday grid rather than hiding it', () => {
+    const sunday = block({ weekday: 0 });
+    const { unplaced } = buildCompare(periods, [], [sunday]);
+    expect(unplaced).toEqual([sunday]);
+  });
+
+  it('carries the course and room through when they are there, and null when they are not', () => {
+    const { rows } = buildCompare(periods, [], [block({ code: 'PH101', room: 'Lab 2' })]);
+    const theirs = cellAt(rows, PERIOD_ONE.id, TUESDAY)?.theirs[0];
+
+    expect(theirs?.code).toBe('PH101');
+    expect(theirs?.room).toBe('Lab 2');
+
+    const busyOnly = buildCompare(periods, [], [block()]);
+    expect(cellAt(busyOnly.rows, PERIOD_ONE.id, TUESDAY)?.theirs[0].code).toBeNull();
+  });
+
+  it('leaves both lists untouched', () => {
+    const mine = [saved()];
+    const theirs = [block()];
+    const before = JSON.stringify([mine, theirs]);
+
+    buildCompare(periods, mine, theirs);
+
+    expect(JSON.stringify([mine, theirs])).toBe(before);
   });
 });

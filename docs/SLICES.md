@@ -28,7 +28,7 @@ column as you go — this is how a fresh session knows where we are.
 | 20 | **Onboarding** — `/start`, a guided path that teaches by doing | done |
 | 21 | Just-in-time hints — a feature explains itself when it becomes useful | done |
 | 22 | Friends — requests, accept/decline, per-friend visibility | done |
-| 23 | Compare — one friend's free/busy or detail, beside yours | not started |
+| 23 | Compare — one friend's free/busy or detail, beside yours | done |
 | ?? | All-day timetable — a 12am–12am day holding named blocks | **not designed** |
 
 Slice 20's design is at
@@ -49,13 +49,15 @@ behind it went from ten queries to eight (a new course) or from eight to six (an
 existing one), with one more removed from every signed-in request in the app.
 `modules/timetable/round-trips.test.ts` counts them so they cannot creep back.
 
-Slice 22 is built. Slice 23 has its schema settled in this file and in
-`docs/SCHEMA.md` but no design document — and one thing in that plan changed
-while slice 22 was built: `profiles_select` was **not** widened to accepted
-friends, because slice 21 put `dismissed_notices` on that table and a row-level
-policy would have handed a friend every column. Reading another person goes
-through `my_friendships()`, which names the three fields they may see. Slice 23
-should follow the same shape rather than the older note.
+Slices 22 and 23 are built, and both ended up narrower than the plan for the
+same reason. `profiles_select` was **not** widened to accepted friends (slice 21
+put `dismissed_notices` on that table, and a row-level policy would have handed a
+friend every column), and `sessions_select` was **not** widened either. Reading
+another person goes through two `security definer` functions that name their
+columns: `my_friendships()` and `friend_timetable()`.
+
+**Every slice on this list is now done.** What comes next is in "What to build
+next" below, and the all-day timetable still needs a brainstorm before a plan.
 
 The all-day timetable has neither. It is the one item here that changes what
 `sessions` and `periods` *mean* — a day would become a container of blocks, one

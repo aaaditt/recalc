@@ -1169,6 +1169,16 @@ export type Database = {
           username: string
         }[]
       }
+      friend_timetable: {
+        Args: { p_friend_id: string }
+        Returns: {
+          course_code: string
+          ends_at: string
+          room: string
+          starts_at: string
+          weekday: number
+        }[]
+      }
       my_friendships: {
         Args: never
         Returns: {

@@ -28,17 +28,18 @@ the "Continue with Google" button on `/login` (slice 18).
 `docs/SLICE_18_SETUP.md` §5. Needs step 1 done first, because it reuses the
 same client ID and secret.
 
-### 3. Nothing — slices 18 to 22 are green
+### 3. Nothing — every slice is green
 
-Slice 18 is at `e1710b9`, 19 at `a5df597`, 20 at `d527191`, 21 at `10982a7`.
-Slice 22 is built with `npm run check` passing on all 502 tests and
-`npm run build` clean. Migrations 014 to 017 are applied to the remote database
-and every backfill has run.
+`e1710b9` (18), `a5df597` (19), `d527191` (20), `10982a7` (21), `7f59519` (22),
+and slice 23. `npm run check` passes on all 519 tests and `npm run build` is
+clean. Migrations 014 to 018 are applied to the remote database and every
+backfill has run.
 
-**Worth doing by hand once:** `/friends` cannot be tried alone. It needs a second
-account — sign up with another email in a private window, claim a username there,
-and add it from your own. That is also the only way to see the two share levels
-behave independently, which is the thing the slice exists to get right.
+**Worth doing by hand once:** friends and comparing cannot be tried alone. Make a
+second account with another email in a private window, claim a username there,
+and add it from your own. Then set one side to "Course and room" and the other to
+"Nothing" and open Compare from both — each of you sees exactly what the *other*
+chose, and that asymmetry is the thing slices 22 and 23 exist to get right.
 
 **Worth doing by hand once:** open `/start` and walk it. Steps 1–4 can be done
 for real. Steps 6 and 7 cannot be finished without an AI key, and they will
@@ -78,7 +79,7 @@ One slice per session (`CLAUDE.md`).
 
 Speed went first, ahead of the slice whose design was already written, so that
 the guided onboarding path would not have to be walked through at 6.6 seconds a
-press. Slices 19 to 22 are done; start at slice 23.
+press. Slices 19 to 23 are all done.
 
 ### Slice 19 — Speed — **DONE** (2026-09-08)
 
@@ -241,20 +242,60 @@ start again.
 `/friends` has no nav entry — the nav is full at six columns — and is linked from
 the `/timetable` header and from `/settings/semester`.
 
-### Slice 23 — Compare timetables — **NEXT**
+### Slice 23 — Compare timetables — **DONE** (2026-09-08)
 
-**Do not widen `sessions_select`.** `sessions` has no `workspace_id` — it reaches
-a workspace only through `courses` — so that policy is three tables deep already
-and a mistake in it leaks notes. Use a second `security definer` function that
-checks for an accepted friendship, reads the visibility column *for the correct
-direction*, and returns times only, or times plus course code and room.
+`/friends/<username>`: your grid with a friend's week laid over it, and the
+hours you are both free marked. Reached from a "Compare" link on each friend,
+shown only when they share something.
 
-Slice 22 left two things pointed at this one. `modules/friends` exports
-`whatTheyShow(friendship)`, which returns `they_share` and exists so there is one
-place to be right about the direction rather than a `case` in slice 23. And the
-levels are already named and described in `SHARE_LEVELS`: `none`, `busy` (times
-only) and `full` (times, course code and room), which is exactly the two shapes
-this slice has to return plus the case where it returns nothing.
+`sessions_select` was **not** widened, as instructed. `friend_timetable()`
+(migration 018) checks for an accepted friendship, reads the visibility column
+for the correct direction, and returns times, plus course code and room at
+`full`. `course_code` and `room` are **null** at `busy` rather than omitted, so
+the shape of a row never gives the level away.
+
+**The direction is the invariant**, and `compare.test.ts` tests it with the two
+sides deliberately set to *different* levels — Alice `none`, Bob `full` — then
+swaps them and asserts again. A test with both sides on the same level is the
+natural way to write it and passes against every wrong implementation, including
+one that reads the caller's own column.
+
+`buildCompare` in `lib/timetable.ts` is pure and tested: their classes are placed
+by start time and never by period id (their ids mean nothing on your grid), and
+anything that fits no row of yours comes back in `unplaced` and is listed under
+the grid. Dropping it would turn an hour they are busy into an hour the screen
+calls free.
+
+A compare URL for someone who is not an accepted friend is a 404, not an
+explanation — "you are not friends with this person" confirms that the person
+exists.
+
+---
+
+## Every planned slice is done
+
+00–23. `npm run check` passes on 519 tests across 43 files and `npm run build` is
+clean. What is left is in **"What to build next"** in `docs/SLICES.md` and in
+**"Noticed, not fixed"** at the bottom of `docs/DECISIONS.md`, and the three that
+matter most have not moved since slice 18:
+
+1. **A note's version does not move when its set of paragraphs changes.** Adding
+   or soft-deleting a paragraph stales nothing, because the cascade fires on a
+   version bump of a block already on a receipt and a new paragraph is on
+   nobody's receipt. Still the biggest hole in the sentence this product exists
+   to say. Half a day, in `modules/notes` and `modules/blocks`.
+2. **No summary, answer, embedding or extraction has ever been produced by a real
+   model.** Every mechanism is proved against the real database with the
+   provider's network faked; every *prompt* is guesswork. `vector(1536)` is a
+   hard width, so the `embed` role wants OpenAI's `text-embedding-3-small`.
+3. **One "needs you" surface.** `/review` has a badge; `/inbox` has none, a dead
+   Gmail token is invisible outside `/settings/email`, and since slice 22 an
+   incoming friend request is invisible until you open `/friends`. Four notes in
+   `DECISIONS.md` now asking for the same thing.
+
+And the all-day timetable is still **not designed**. It changes what `sessions`
+and `periods` mean, so it needs a brainstorm before a plan — do not start it from
+the table row.
 
 ### Not designed — the all-day timetable
 

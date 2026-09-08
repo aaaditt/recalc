@@ -118,3 +118,24 @@ export class TheyAskedYou extends Error {
     this.name = 'TheyAskedYou';
   }
 }
+
+// ---------------------------------------------------------------------------
+// Comparing timetables — slice 23
+// ---------------------------------------------------------------------------
+
+/**
+ * One class in a friend's week, as much of it as they let you see.
+ *
+ * `course_code` and `room` are null at the `busy` level and populated at `full`.
+ * They are *null* rather than absent on purpose: the shape is the same at every
+ * level, so nothing downstream can tell the levels apart by which fields came
+ * back, and nothing can read a code that happened to be there.
+ */
+export const friendClassSchema = z.object({
+  weekday: z.number().int().min(0).max(6),
+  starts_at: z.string(),
+  ends_at: z.string(),
+  course_code: z.string().nullable(),
+  room: z.string().nullable(),
+});
+export type FriendClass = z.infer<typeof friendClassSchema>;

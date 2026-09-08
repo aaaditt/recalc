@@ -241,3 +241,86 @@ export function pendingClass(fields: {
  * than a Postgres error — but it is never a lie about whether the save happened.
  */
 export type SaveResult = { ok: true } | { ok: false; message: string };
+
+// ---------------------------------------------------------------------------
+// Two weeks side by side — slice 23
+// ---------------------------------------------------------------------------
+//
+// The useful question is not "what are their classes", it is "when are we both
+// free", and that is arithmetic on two lists. It lives here, pure and tested,
+// for the same reason the optimistic reducer above does: the answer is a claim
+// the screen makes to a person who is about to act on it, and a claim like that
+// should not live somewhere it cannot be checked.
+
+/** One of a friend's classes, as much of it as they let you see. */
+export type FriendBlock = {
+  weekday: number;
+  startsAt: string;
+  endsAt: string;
+  /** Null unless they share `full`. */
+  code: string | null;
+  room: string | null;
+};
+
+export type CompareCell = {
+  period: TimetablePeriod;
+  weekday: number;
+  mine: TimetableClass[];
+  theirs: FriendBlock[];
+  /** Neither of you has anything in this slot. */
+  bothFree: boolean;
+};
+
+/**
+ * Your grid with a friend's week laid over it.
+ *
+ * Their classes are placed by start time and never by period id: the ids are
+ * theirs, from their own grid, and two people can number their periods
+ * differently. Anything of theirs that matches no row of yours comes back in
+ * `unplaced` rather than being dropped — a class you cannot see the position of
+ * is still a class they are in, and a "both free" that quietly ignored it would
+ * be the screen lying about the one thing it is for.
+ */
+export function buildCompare(
+  periods: TimetablePeriod[],
+  mine: TimetableClass[],
+  theirs: FriendBlock[],
+  weekdays: readonly number[] = WEEKDAYS
+): { rows: CompareCell[][]; unplaced: FriendBlock[] } {
+  const byStart = new Map<string, TimetablePeriod>();
+  for (const period of periods) byStart.set(clockLabel(period.startsAt), period);
+
+  const placed = new Map<string, FriendBlock[]>();
+  const unplaced: FriendBlock[] = [];
+
+  for (const block of theirs) {
+    const period = byStart.get(clockLabel(block.startsAt));
+    if (!period || !weekdays.includes(block.weekday)) {
+      unplaced.push(block);
+      continue;
+    }
+    const key = cellKey(period.id, block.weekday);
+    placed.set(key, [...(placed.get(key) ?? []), block]);
+  }
+
+  const ours = buildGrid(periods, mine, weekdays);
+
+  const rows = ours.rows.map((row) =>
+    row.map((cell) => {
+      const friendBlocks = placed.get(cellKey(cell.period.id, cell.weekday)) ?? [];
+      return {
+        period: cell.period,
+        weekday: cell.weekday,
+        mine: cell.classes,
+        theirs: friendBlocks,
+        // "Both free" is only true when it is known to be true. A slot where
+        // their sharing level tells you nothing is not a free slot, and this
+        // function is never given the level — the caller does not draw the grid
+        // at all when there is nothing to draw.
+        bothFree: cell.classes.length === 0 && friendBlocks.length === 0,
+      };
+    })
+  );
+
+  return { rows, unplaced };
+}
