@@ -318,6 +318,78 @@ goes `pending → accepted`, and that each side may change only their own
 sessions on the anon key — the service-role key bypasses RLS, so a test written
 with it would pass whether any of this existed or not.
 
+## Bands — the parts of a day (slice 25)
+
+The first table about the *shape* of a day rather than about what is in it.
+
+A band is a named, recurring stretch of the day that runs by its own rules:
+University 07:30–15:40, an evening, a weekend. It has a fixed weekly frame and,
+inside it, its own weekly slots.
+
+**Bands are not `blocks`.** `blocks` is the versioned primitive everything in
+this app is made of. A band has no content, no version and no `content_hash`,
+and nothing is ever derived from one. The name was chosen to keep those two
+ideas from ever being confused in a query.
+
+**The university band owns no classes.** `sessions` is still the weekly pattern
+and `class_meetings` are still the dated lectures. A band with
+`kind = 'university'` is a lens over both — exactly as `/timetable` is — so
+there is one place a class lives. Deleting it deletes a frame and not one
+lecture, and `modules/bands/bands.test.ts` proves that against the real
+database rather than asserting it here.
+
+```sql
+create table bands (
+  id           uuid primary key default gen_random_uuid(),
+  workspace_id uuid not null references workspaces(id) on delete cascade,
+  name         text not null,                          -- 'University', 'Evening'
+  kind         text not null default 'custom',         -- 'custom' | 'university'
+  starts_at    time not null,                          -- wall clock, like periods
+  ends_at      time not null,
+  weekdays     int[] not null default '{1,2,3,4,5}',   -- 0=Sun .. 6=Sat
+  position     numeric not null,
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now()
+);
+
+-- One printed timetable, so one university band. Enforced, not remembered.
+create unique index bands_one_university
+  on bands (workspace_id) where kind = 'university';
+
+create table band_slots (
+  id           uuid primary key default gen_random_uuid(),
+  band_id      uuid not null references bands(id) on delete cascade,
+  workspace_id uuid not null references workspaces(id) on delete cascade,
+  label        text not null,
+  course_id    uuid references courses(id) on delete set null,
+  weekday      int  not null,
+  starts_at    time not null,
+  ends_at      time not null,
+  created_at   timestamptz not null default now()
+);
+```
+
+`weekdays` is an array on a band and a column on a slot, which is the one place
+this pair disagrees with `sessions`. A band is one thing happening on several
+days, so moving its end time should be one write; a slot is a specific thing on
+a specific day, which is what a row is for.
+
+`band_slots.workspace_id` is redundant — it is reachable through `band_id` — and
+is there anyway. `sessions` made the other choice, and this file already spends
+two paragraphs on the bill: `sessions` reaches a workspace only through
+`courses`, its RLS policy is three tables deep, and slices 22 and 23 both had to
+route around it with `security definer` functions rather than widen it. Sharing
+a band with a friend is the next slice; one uuid now is cheaper than a fourth
+join then.
+
+A band has **no colour column**. `docs/DESIGN.md` principle 4: colour identifies
+a course and nothing else. A band is chrome.
+
+Three rules are enforced in `modules/bands/service.ts` rather than in SQL,
+because none of them is a cheap constraint: no two bands cover the same minute
+of the same weekday, a slot sits inside its band and on a day it runs, and the
+university band takes no slots at all.
+
 ## Agents (bring your own key)
 
 ```sql

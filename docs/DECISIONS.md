@@ -3637,3 +3637,87 @@ Things spotted outside the current slice. Do not fix them mid-slice; write them 
 - **`/settings` is now the eighth screen reached by a link rather than a nav
   destination**, and it is the one that holds the other seven. That is the fifth
   entry in this file about the nav being full at six.
+
+
+---
+
+# Slice 25 — bands, the parts of a day
+
+## The name is `bands`, not `blocks`
+
+Aadit asked for "calendar blocks" and this is the one place the code does not
+use his word. `blocks` is *the* primitive in this app — "everything in the app
+is a row here" — and a second table with `block` in its name that is emphatically
+not that primitive is a collision that costs an evening in slice 31, not today.
+The screens say "band"; the empty state explains what one is in a sentence.
+Alternatives weighed and dropped: `day_blocks` (the collision), `zones` (`zone`
+already means timezone in every calendar file), `layers` (implies stacking, when
+these tile).
+
+## The 24-hour view is a deliberate exception to the auto-crop rule
+
+`docs/DESIGN.md` calls a calendar full of empty night hours "the single most
+common way this screen goes wrong", and `croppedHours` exists to prevent it.
+This view renders 00:00–24:00 on purpose, because the empty hours are its
+subject: the gap between the last lecture and whatever happens next is the
+question the screen asks. The doc was amended rather than the rule quietly
+broken, and the amendment says the rule still binds week, day and month.
+
+## A band has no colour
+
+The schema had one and it was removed before the migration was applied.
+`docs/DESIGN.md` principle 4 and CLAUDE.md rule 7 both say colour identifies a
+course and nothing else. A band is chrome — a hairline and a surface — and the
+only colour on the 24-hour view is the tick rail, which is course colour. A
+"pick a colour for your Evening" field would have been the first crack in the
+one rule that keeps the calendar scannable.
+
+## The frame is fixed, and does not shrink to fit its contents
+
+University is 07:30–15:40 on a Tuesday whether there are five classes or one.
+The alternative — the band snapping to its earliest and latest thing — is truer
+to where the body is and was rejected because the block then moves under you day
+to day, and because the empty tail after the last class is *information*: still
+on campus, nothing scheduled. That gap is most of the point.
+
+## `weekdays` is an array on a band and a column on a slot
+
+The one place this pair disagrees with `sessions`. A band is one thing happening
+on several days, so moving its end time is one write rather than five; a slot is
+a specific thing on a specific day, which is what a row is for. The array is
+sorted and de-duplicated in the zod schema so "does this run on Friday" never
+depends on the order it was typed.
+
+## Two bands may not cover the same minute of the same weekday
+
+Enforced in the service, not in SQL — an exclusion constraint would need a range
+type per weekday checked against an array column. The rule is what lets
+`bandAt` return one answer instead of a list, which is what lets `/today` say
+"you are in University" at all.
+
+## Noticed, not fixed
+
+- **`bandLine` on `/today` costs one extra round trip.** It is inside the page's
+  existing `Promise.all`, so it adds no waiting, but it is a select nobody asked
+  for on a screen that is opened every morning. If `/today` ever gets slow, the
+  bands read and the courses read want to be one call.
+- **A band cannot cross midnight.** `ends_at > starts_at` is a SQL constraint, so
+  a 22:00–02:00 band is currently impossible. It is a real thing somebody would
+  want and it doubles the arithmetic in every view — `bandSpan`, `bandAt`,
+  `fillOfBand`, `tickMarks` and the drag would all need a wrapped case.
+- **There are no per-date exceptions.** "No university on the 14th" cannot be
+  said. The frame is weekly and a public holiday is invisible to it.
+- **`band_slots.course_id` is stored and read for exactly one thing: a colour.**
+  Nothing multiplies it by study minutes yet, which is the only reason it exists.
+  It is the cheapest hook in the codebase for the sentence in `docs/PRODUCT.md`
+  and it is currently doing nothing.
+- **Drag creates a band but cannot move or resize one.** Editing is a form. The
+  gesture that would be most natural — dragging the bottom edge of University
+  from 15:40 to 16:30 — is the one that is not there.
+- **A zoomed band that is still in the URL but not on screen has no affordance
+  saying so.** Stepping from Tuesday to Saturday while inside the Evening band
+  drops back to the whole day, because Evening does not run on Saturday, and
+  stepping back to Tuesday reopens it. That is the right behaviour and it happens
+  silently — nothing on the Saturday view says "you were reading Evening".
+- **`/bands` is the ninth screen reached by a link rather than a nav destination.**
+  Sixth entry in this file about the nav being full at six.

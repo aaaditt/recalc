@@ -272,6 +272,51 @@ failure copy still says "press Summarise" whatever the recipe was;
 can only be marked `moved`; and `getUnresolvedQuestions` reads the whole
 semester to draw one course page.
 
+## Slice 25 — bands, the parts of a day
+
+Built. The first screen in this app that draws a whole day.
+
+Every screen before this one assumed the eight hours between 07:30 and 15:40
+were the day. A **band** is a named, recurring stretch of the day that runs by
+its own rules — University is one, an evening is another — with a fixed weekly
+frame and, inside it, its own weekly slots. `/calendar?v=full` draws all
+twenty-four hours, deliberately uncropped, as bands rather than as classes; drag
+on it to draw a new one; click one to open it; `/bands` and `/bands/<id>` are
+where the frames and the slots are edited. `/today` gained one line saying which
+part of the day this is and how much of it is left.
+
+The dangerous part is not the grid, it is the lens, and the whole of it is
+proved against the real database in `modules/bands/bands.test.ts` (16 tests).
+**The university band owns no classes.** It is drawn from `sessions` and
+`class_meetings`, exactly as `/timetable` is, so deleting it — the most alarming
+thing this feature can do — destroys a frame and leaves every lecture, every
+instant, every id and the note block attached to one of them exactly where it
+was. The test asserts the ids, not the count, because a note is attached to a
+lecture by id. If a later session ever gives a band a foreign key that cascades
+into the semester, that file fails.
+
+The other rules it holds: two bands never cover the same minute of the same
+weekday (which is what lets `/today` say "you are in University" rather than
+hand back a list), a slot sits inside its band and on a day it runs, the
+university band takes no slots at all, and moving a frame moves nothing inside
+it.
+
+Migration 019 seeds the university band from the printed timetable — first
+period's start to last period's end, on the days that actually have a class —
+so the screen is right the first time it is opened, with no setup step.
+
+## Slice 26 — a part of your day, shown to a friend
+
+Designed, not built. Scoped out of 25 on purpose: it needs a third
+`security definer` function and RLS tests with three real signed-in sessions,
+which has been a full slice every time this codebase has done it.
+
+A share level per band, and `friend_bands(p_friend_id)` shaped exactly like
+`friend_timetable` — accepted friendships only, nulls at `busy` rather than
+omitted columns, so the shape of the row does not give the level away.
+`band_slots` already carries `workspace_id` so that policy is one join and not
+four; see `docs/SCHEMA.md`.
+
 ## Stopping rule
 
 You can stop after any slice and still have a working app. If a slice is dragging

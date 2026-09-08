@@ -75,6 +75,111 @@ export type Database = {
         }
         Relationships: []
       }
+      band_slots: {
+        Row: {
+          band_id: string
+          course_id: string | null
+          created_at: string
+          ends_at: string
+          id: string
+          label: string
+          starts_at: string
+          weekday: number
+          workspace_id: string
+        }
+        Insert: {
+          band_id: string
+          course_id?: string | null
+          created_at?: string
+          ends_at: string
+          id?: string
+          label: string
+          starts_at: string
+          weekday: number
+          workspace_id: string
+        }
+        Update: {
+          band_id?: string
+          course_id?: string | null
+          created_at?: string
+          ends_at?: string
+          id?: string
+          label?: string
+          starts_at?: string
+          weekday?: number
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "band_slots_band_id_fkey"
+            columns: ["band_id"]
+            isOneToOne: false
+            referencedRelation: "bands"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "band_slots_course_id_fkey"
+            columns: ["course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "band_slots_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bands: {
+        Row: {
+          created_at: string
+          ends_at: string
+          id: string
+          kind: string
+          name: string
+          position: number
+          starts_at: string
+          updated_at: string
+          weekdays: number[]
+          workspace_id: string
+        }
+        Insert: {
+          created_at?: string
+          ends_at: string
+          id?: string
+          kind?: string
+          name: string
+          position: number
+          starts_at: string
+          updated_at?: string
+          weekdays?: number[]
+          workspace_id: string
+        }
+        Update: {
+          created_at?: string
+          ends_at?: string
+          id?: string
+          kind?: string
+          name?: string
+          position?: number
+          starts_at?: string
+          updated_at?: string
+          weekdays?: number[]
+          workspace_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bands_workspace_id_fkey"
+            columns: ["workspace_id"]
+            isOneToOne: false
+            referencedRelation: "workspaces"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       block_embeddings: {
         Row: {
           block_id: string

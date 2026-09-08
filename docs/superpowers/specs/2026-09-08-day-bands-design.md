@@ -287,3 +287,45 @@ still binds week, day and month.
 - **Slots feeding study minutes.** `course_id` is stored and coloured; nothing
   multiplies it by anything yet.
 - **Drag to move or resize an existing band.** Creation only. Editing is a form.
+
+---
+
+## Amendment — 2026-09-08, written while building it
+
+Four things changed between the approved design and the built slice. All four
+are recorded in `docs/DECISIONS.md` as well.
+
+### Bands have no colour
+
+The design gave `bands` a `colour` column. It was removed before migration 019
+was applied. `docs/DESIGN.md` principle 4 and `CLAUDE.md` rule 7 both say colour
+identifies a course and nothing else; a band is chrome, and a "pick a colour for
+your Evening" field would have been the first crack in the one rule that keeps
+the calendar scannable. The only colour on the 24-hour view is the tick rail,
+which is course colour.
+
+### The count line reads free *time*, not free periods
+
+The design said `5 classes · 2 free`, where "free" meant free periods. Counting
+periods needs the `periods` table on a screen that otherwise does not read it.
+`5 classes · 1h 20m free` is computed from the band's own span minus what covers
+it, needs nothing extra, and is a more useful number. Overlapping occupants are
+merged first, so two classes in the same hour do not make the day look twice as
+busy as it is.
+
+### The zoom closes itself on a day the band does not run
+
+Not in the design, and it was a real rough edge: stepping from Tuesday to
+Saturday while inside the Evening band would have rendered an empty grid.
+`bandId` is kept in the URL, so stepping back reopens it.
+
+### The forms are seeded by a remount key, not by an effect
+
+`react-hooks/set-state-in-effect` refused the prop-syncing effect the design
+implied, and it was right to. Both sheets initialise their state once from props
+and get a `key` at the call site — the arrangement
+`components/timetable/class-sheet.tsx` already used.
+
+### What was left out
+
+Friend sharing, as planned: it is slice 26 and is recorded in `docs/SLICES.md`.

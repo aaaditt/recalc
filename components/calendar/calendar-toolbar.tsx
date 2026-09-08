@@ -15,10 +15,13 @@ const LABEL: Record<CalendarView, string> = {
   week: 'Week',
   day: 'Day',
   month: 'Month',
+  // Slice 25. 'Day' was taken, and '24h' is what the view actually is: the
+  // whole day, uncropped, drawn as bands.
+  full: '24h',
 };
 
 /** The keyboard shortcut, shown in the button's tooltip. */
-const KEY: Record<CalendarView, string> = { week: 'W', day: 'D', month: 'M' };
+const KEY: Record<CalendarView, string> = { week: 'W', day: 'D', month: 'M', full: 'F' };
 
 const CHOSEN = 'bg-sunken font-medium text-ink';
 const IDLE = 'text-muted hover:bg-sunken hover:text-ink';
@@ -30,6 +33,7 @@ const AUTO: Record<CalendarView, string> = {
   week: 'md:bg-sunken md:font-medium md:text-ink max-md:text-muted max-md:hover:bg-sunken max-md:hover:text-ink',
   day: 'max-md:bg-sunken max-md:font-medium max-md:text-ink md:text-muted md:hover:bg-sunken md:hover:text-ink',
   month: IDLE,
+  full: IDLE,
 };
 
 function tabClass(view: CalendarViewChoice, target: CalendarView): string {
@@ -61,12 +65,19 @@ export function CalendarToolbar({
   onStep,
   onToday,
   onAdd,
+  addLabel = 'Add class',
 }: {
   view: CalendarViewChoice;
   onView: (view: CalendarView) => void;
   onStep: (direction: -1 | 1) => void;
   onToday: () => void;
   onAdd: () => void;
+  /**
+   * What the primary button does here. On the 24-hour view it makes a band, not
+   * a class, and it is also the door for anyone who would rather not drag —
+   * which is why drag is never the only way in.
+   */
+  addLabel?: string;
 }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 pb-4">
@@ -106,7 +117,7 @@ export function CalendarToolbar({
         </div>
 
         <Button variant="primary" onClick={onAdd}>
-          Add class
+          {addLabel}
         </Button>
       </div>
     </div>

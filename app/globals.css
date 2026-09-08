@@ -95,6 +95,20 @@
   --strip-selected-size: 34px;
   --strip-dot-size: 4px;
 
+  /* The 24-hour view — slice 25, the one view in this app that never crops its
+     hours. docs/DESIGN.md gives no numbers for a grid that draws a whole day,
+     so these three were chosen from the ones it does give, and the reasoning
+     for 36px is written out in lib/bands.ts: 80px x 24 is a day you scroll
+     twice to see, 36px x 24 is 864px and fits a laptop at a glance. It is
+     affordable only because this view draws bands rather than classes, so
+     nothing on it has to fit three lines of text into fifty minutes. */
+  --fullday-hour-height: 36px;
+  /* The rail of tick marks under a band's name: where the day's density is. */
+  --band-tick-height: 3px;
+  /* A band drawn while the pointer is still down. Same hairline as everything
+     else; it is a preview, not a new kind of object. */
+  --band-draft-radius: 6px;
+
   /* The period grid — slice 16, the first screen drawn as periods rather than
      clock hours. docs/DESIGN.md gives no numbers for it, so these four were
      chosen from the ones it does give: the row is the 44px tap target plus room

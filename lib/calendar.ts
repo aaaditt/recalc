@@ -26,7 +26,12 @@ import {
 // What the views are handed
 // ---------------------------------------------------------------------------
 
-export type CalendarView = 'week' | 'day' | 'month';
+/**
+ * 'full' is the 24-hour view added in slice 25 — one day, midnight to midnight,
+ * drawn as bands rather than as individual classes. It is the only view that
+ * does not crop its hours; see lib/bands.ts, FULL_DAY.
+ */
+export type CalendarView = 'week' | 'day' | 'month' | 'full';
 
 /**
  * `auto` is the state before anyone has chosen: week on a laptop, day on a
@@ -36,10 +41,10 @@ export type CalendarView = 'week' | 'day' | 'month';
  */
 export type CalendarViewChoice = CalendarView | 'auto';
 
-export const CALENDAR_VIEWS: CalendarView[] = ['week', 'day', 'month'];
+export const CALENDAR_VIEWS: CalendarView[] = ['week', 'day', 'month', 'full'];
 
 export function isCalendarView(value: string | null | undefined): value is CalendarView {
-  return value === 'week' || value === 'day' || value === 'month';
+  return CALENDAR_VIEWS.includes(value as CalendarView);
 }
 
 /** '?v=' is a hint, not a promise. Anything else means "not chosen yet". */

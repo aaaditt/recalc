@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 
 import { toggleTaskDoneAction } from '../tasks/actions';
 import { FinishSetupLine } from '@/components/onboarding/finish-setup-line';
+import { BandLine } from '@/components/today/band-line';
 import { ClassRow } from '@/components/today/class-row';
 import { SetUpAgentsStrip } from '@/components/today/setup-agents';
 import { StudyStrip } from '@/components/today/study-strip';
@@ -10,6 +11,8 @@ import { TaskRow } from '@/components/today/task-row';
 import { Card, CardDivider } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { PageHeader } from '@/components/ui/page-header';
+import { bandLine, toBandViews } from '@/lib/bands';
+import { minutesInto, spanOfDay } from '@/lib/calendar';
 import { colourForCourse, type CourseColour } from '@/lib/course-colours';
 import { formatMinutes } from '@/lib/study';
 import { createClient } from '@/lib/supabase/server';
@@ -29,6 +32,7 @@ import {
   groupTasksByDay,
 } from '@/lib/today';
 import { hasAgentRole } from '@/modules/agents';
+import { getBands } from '@/modules/bands';
 import { getCourses, getMeetingsOnDate } from '@/modules/courses';
 import { getProgress, shouldOfferSetup } from '@/modules/onboarding';
 import { getMinutesOnDate, getMinutesThisWeek } from '@/modules/study';
@@ -130,6 +134,7 @@ export default async function TodayPage() {
     minutesThisWeek,
     hasFastModel,
     progress,
+    bandRows,
   ] = await Promise.all([
       getCourses(supabase, workspace.id),
       getMeetingsOnDate(supabase, workspace.id, today, zone),
@@ -152,6 +157,9 @@ export default async function TodayPage() {
       // all, and asking it after the batch would have cost a full ~606ms round
       // trip on the screen that gets opened every morning.
       getProgress(supabase, user.id, workspace.id),
+      // Slice 25. A handful of rows, inside the batch, so the line above costs
+      // this page no extra waiting.
+      getBands(supabase, workspace.id),
     ]);
 
   // Slice 20 replaced the five-step card here with one line pointing at
@@ -188,6 +196,29 @@ export default async function TodayPage() {
     });
   });
 
+  // Which part of the day this is. Null outside every band, and then the line
+  // does not render — see components/today/band-line.tsx.
+  //
+  // Every instant here is measured against `zone` rather than read off the
+  // process clock. lib/time.ts exists because "the dev machine is not the test
+  // runner is not Vercel", and a page that says "you are in University" from
+  // the wrong timezone is worse than a page that says nothing.
+  const bands = toBandViews(bandRows, look);
+  const currentBand = bandLine(
+    bands,
+    today,
+    minutesInto(now, today, zone),
+    meetings.flatMap((meeting) => {
+      const span = spanOfDay(
+        { startsAt: meeting.starts_at, endsAt: meeting.ends_at },
+        today,
+        zone
+      );
+      if (!span) return [];
+      return [{ label: look.get(meeting.course_id)?.code ?? 'Class', ...span }];
+    })
+  );
+
   const states = classStates(meetings, now);
   const due = groupTasksByDay(allTasks, { now, today, timeZone: zone });
   const hasDeadlines = due.overdue.length > 0 || due.days.length > 0;
@@ -216,6 +247,10 @@ export default async function TodayPage() {
           </Link>
         }
       />
+
+      <div className="pt-2">
+        <BandLine line={currentBand} />
+      </div>
 
       {settingUp ? (
         <div className="pt-2">

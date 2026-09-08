@@ -3,7 +3,15 @@ import {
   rescheduleMeetingAction,
   setMeetingCancelledAction,
 } from './actions';
+// The band actions live with /bands and are shared, rather than copied here.
+// There is one set of rules about what a band may be and one place they run.
+import {
+  createBandAction,
+  removeBandAction,
+  updateBandAction,
+} from '@/app/(app)/bands/actions';
 import { Calendar } from '@/components/calendar/calendar';
+import { toBandViews } from '@/lib/bands';
 import {
   dateFromParam,
   viewFromParam,
@@ -13,6 +21,7 @@ import {
 import { colourForCourse, type CourseColour } from '@/lib/course-colours';
 import { createClient } from '@/lib/supabase/server';
 import { localTimeZone, shiftDate, todayIn } from '@/lib/time';
+import { ensureUniversityBand, getBands } from '@/modules/bands';
 import { getCourses, getMeetingsBetween } from '@/modules/courses';
 import { getTasksDueBetween } from '@/modules/tasks';
 import { ensureWorkspace } from '@/modules/workspaces';
@@ -35,7 +44,7 @@ type CourseLook = { code: string; name: string; colour: CourseColour };
 export default async function CalendarPage({
   searchParams,
 }: {
-  searchParams: Promise<{ d?: string; v?: string }>;
+  searchParams: Promise<{ d?: string; v?: string; band?: string }>;
 }) {
   const params = await searchParams;
 
@@ -58,10 +67,18 @@ export default async function CalendarPage({
   const windowFrom = shiftDate(anchor, -WINDOW_DAYS);
   const windowTo = shiftDate(anchor, WINDOW_DAYS);
 
-  const [courses, meetingRows, taskRows] = await Promise.all([
+  // The university band is made from the printed timetable the first time this
+  // page is opened on a workspace created after migration 019 — the same
+  // arrangement `ensurePeriods` has, idempotent for the same reason. It runs
+  // before `getBands` so the 24-hour view is right on its first paint rather
+  // than after a refresh.
+  await ensureUniversityBand(supabase, workspace.id);
+
+  const [courses, meetingRows, taskRows, bandRows] = await Promise.all([
     getCourses(supabase, workspace.id),
     getMeetingsBetween(supabase, workspace.id, windowFrom, windowTo, zone),
     getTasksDueBetween(supabase, workspace.id, windowFrom, windowTo, zone),
+    getBands(supabase, workspace.id),
   ]);
 
   // Courses come back ordered by code, so a course without a colour of its own
@@ -122,9 +139,14 @@ export default async function CalendarPage({
           code: course.code,
           name: course.name,
         }))}
+        bands={toBandViews(bandRows, look)}
+        initialBandId={params.band ?? null}
         reschedule={rescheduleMeetingAction}
         setCancelled={setMeetingCancelledAction}
         addOneOff={addOneOffMeetingAction}
+        createBand={createBandAction}
+        updateBand={updateBandAction}
+        removeBand={removeBandAction}
       />
     </div>
   );

@@ -84,7 +84,7 @@ Tap targets: **44px minimum** on touch. This will feel too big on desktop; it is
 
 # The calendar
 
-The most-looked-at screen in the app. Three views, and each has one job.
+The most-looked-at screen in the app. Four views, and each has one job.
 
 ## Week view — the default on desktop
 
@@ -92,6 +92,8 @@ The most-looked-at screen in the app. Three views, and each has one job.
 - **Auto-crop the range.** Do not render 00:00–23:59. Find my earliest and latest
   class in the visible week, pad by one hour, show that. A calendar mostly full of
   empty night hours is the single most common way this screen goes wrong.
+  (The 24-hour view, below, is the one deliberate exception. This rule still
+  binds week, day and month.)
 - **Five columns if I have no weekend classes**, seven if I do. Detect it.
 - **Class block** shows, in order of priority as height allows:
   1. subject code (mono, e.g. `ME301`)
@@ -128,7 +130,39 @@ For seeing shape and pressure, not detail.
 - No text inside cells beyond the date and the badge.
 - Tap a day → day view for that day.
 
-## Rules that apply to all three
+## The 24-hour view — the whole day, and the parts of it
+
+Added in slice 25, and the one view in this app that **never crops its hours**.
+
+The rule above exists because a *class* calendar full of empty night hours is
+noise. This view is not a class calendar. It draws a whole day so I can see the
+shape of it, and the gap between the last lecture and whatever happens next is
+the question it is asking. Crop it and the feature is gone.
+
+The day is drawn as **bands** — named, recurring stretches that run by their own
+rules. University 07:30–15:40 is one; an evening is another. A band is a
+*frame*: the university band owns no class data at all, and is drawn from the
+same `sessions` and `class_meetings` everything else reads.
+
+- **One day at a time**, `←`/`→` to move, `T` for today, `F` to get here. Twenty-four
+  hours across five columns is unreadable on a laptop and absurd on a phone.
+- **A band draws as one container**, never as a pile of blocks: its name, a
+  count line, and a thin rail of tick marks showing where the day's density is.
+  The individual classes are what opening it is for. Drawing them twice would
+  make the summary pointless and would need an 80px hour row.
+- **A band has no colour.** Principle 4 — colour identifies a course and nothing
+  else. A band is chrome: a hairline and a surface. The only colour on this
+  screen is on the tick rail, and it belongs to the courses inside.
+- **Anything outside every band draws normally.** A band is a frame, not a filter.
+- **Empty stretches stay empty.** No compression, no "night collapsed" control.
+- **Opening a band** crops the day to its span at the day view's 72px row, and
+  draws its contents at full size — class blocks for university, slots for
+  everything else.
+- **Drag on the background to draw a new band**, snapped to five minutes. There
+  is always a 44px button that does the same thing: drag is an accelerator,
+  never the only door.
+
+## Rules that apply to all four
 
 - Transitions ≤150ms, and none tied to scrolling.
 - Changing week or day must never show a loading state. Prefetch neighbours.
@@ -205,6 +239,25 @@ These are settled. Build to them rather than re-deriving.
   under any day with classes
 - Hour row height **72px**
 - Class blocks inset 60px from the left (clearing the time labels), 14px from the right
+
+## 24-hour view
+
+The only measurements here that were chosen rather than quoted, because this
+section did not describe a whole-day grid before slice 25. The reasoning is
+written out in `lib/bands.ts`.
+
+- Hour row height **36px**. 80px × 24 is 1920px — a day you scroll twice to
+  see. 36px × 24 is 864px, a whole day at a glance on a laptop and one short
+  scroll on a phone. It is affordable only because this view draws bands rather
+  than classes, so nothing on it has to fit three lines into fifty minutes.
+- Band container: 6px radius, 1px `--line`, `--surface`; the band the clock is
+  currently inside gets `--border` and `--sunken`. No accent — being at
+  university is not something that needs my attention.
+- Tick rail **3px**, marks in the course colour, minimum width 1% so a
+  fifteen-minute thing is still visible.
+- Drag snaps to **5 minutes**; a drag under **15 minutes** is a wobbled tap and
+  is discarded. On touch the finger must rest **350ms** before a drag begins, so
+  scrolling still works.
 
 ## Month view
 

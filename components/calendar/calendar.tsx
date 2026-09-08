@@ -28,8 +28,15 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
 import { AddClassSheet, type CourseOption } from '@/components/calendar/add-class-sheet';
+import { BandZoom } from '@/components/calendar/band-zoom';
 import { CalendarToolbar } from '@/components/calendar/calendar-toolbar';
 import { DayView } from '@/components/calendar/day-view';
+import { FullDayView, type BandDraft } from '@/components/calendar/full-day-view';
+import {
+  BandSheet,
+  type BandFormValues,
+  type OpenBand,
+} from '@/components/bands/band-sheet';
 import { MeetingSheet } from '@/components/calendar/meeting-sheet';
 import { MonthView } from '@/components/calendar/month-view';
 import { WeekGrid } from '@/components/calendar/week-grid';
@@ -48,7 +55,9 @@ import {
   type CalendarView,
   type CalendarViewChoice,
 } from '@/lib/calendar';
-import { shiftDate, type CalendarDate } from '@/lib/time';
+import type { BandView } from '@/lib/bands';
+import type { SaveResult } from '@/lib/timetable';
+import { shiftDate, weekdayOf, type CalendarDate } from '@/lib/time';
 
 /** The now-line has to be right to the minute; this checks twice as often. */
 const NOW_TICK_MS = 30_000;
@@ -98,9 +107,16 @@ type CalendarProps = {
   meetings: CalendarMeeting[];
   deadlines: CalendarDeadline[];
   courses: CourseOption[];
+  /** The parts of the day. Slice 25 — see lib/bands.ts. */
+  bands: BandView[];
+  /** '?band=' — which band is open, so a zoomed view survives a refresh. */
+  initialBandId: string | null;
   reschedule: (id: string, startsAt: string, endsAt: string) => Promise<void>;
   setCancelled: (id: string, cancelled: boolean) => Promise<void>;
   addOneOff: (input: OneOffInput) => Promise<void>;
+  createBand: (values: BandFormValues) => Promise<SaveResult>;
+  updateBand: (bandId: string, values: BandFormValues) => Promise<SaveResult>;
+  removeBand: (bandId: string) => Promise<SaveResult>;
 };
 
 export function Calendar(props: CalendarProps) {
@@ -111,6 +127,11 @@ export function Calendar(props: CalendarProps) {
   const [view, setView] = useState<CalendarViewChoice>(props.initialView);
   const [openId, setOpenId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  // Which band is zoomed, and which one is being edited in the sheet. Two
+  // separate things: you can open the Evening band's day and, from /bands,
+  // still be editing its frame.
+  const [bandId, setBandId] = useState<string | null>(props.initialBandId);
+  const [bandForm, setBandForm] = useState<OpenBand | null>(null);
   const [pending, startTransition] = useTransition();
 
   // Null while the server renders, so the HTML carries no now-line.
@@ -168,7 +189,8 @@ export function Calendar(props: CalendarProps) {
   function step(direction: -1 | 1) {
     const stepping = shownView();
 
-    if (stepping === 'day') {
+    // The 24-hour view is a day at a time, so it steps like one.
+    if (stepping === 'day' || stepping === 'full') {
       setCursor(shiftDate(cursor, direction));
     } else if (stepping === 'week') {
       setCursor(shiftDate(cursor, direction * 7));
@@ -197,6 +219,7 @@ export function Calendar(props: CalendarProps) {
       else if (key === 'w') setView('week');
       else if (key === 'd') setView('day');
       else if (key === 'm') setView('month');
+      else if (key === 'f') setView('full');
       else return;
 
       event.preventDefault();
@@ -217,10 +240,12 @@ export function Calendar(props: CalendarProps) {
   // while it does.
 
   useEffect(() => {
-    const url = `/calendar?d=${cursor}&v=${view}`;
+    // The zoomed band is in the URL so it is linkable and so Back leaves it.
+    const url =
+      `/calendar?d=${cursor}&v=${view}` + (bandId ? `&band=${bandId}` : '');
     if (cursor < windowFrom || cursor > windowTo) router.replace(url);
     else window.history.replaceState(null, '', url);
-  }, [cursor, view, windowFrom, windowTo, router]);
+  }, [cursor, view, bandId, windowFrom, windowTo, router]);
 
   // ---- swipe --------------------------------------------------------------
 
@@ -274,6 +299,54 @@ export function Calendar(props: CalendarProps) {
     applyEdit(id, { cancelled }, () => props.setCancelled(id, cancelled));
   }
 
+  // ---- bands --------------------------------------------------------------
+
+  // A band that does not run on the day now on screen is not zoomed into an
+  // empty grid — the day view comes back. `bandId` is kept, so stepping back to
+  // a day it does run reopens it, which is what stepping through a week while
+  // reading one band should feel like.
+  const open = bandId ? (props.bands.find((band) => band.id === bandId) ?? null) : null;
+  const zoomed = open && open.weekdays.includes(weekdayOf(cursor)) ? open : null;
+
+  /** A finished drag, or the "New band" button. Both open the same empty form. */
+  function openNewBand(draft?: BandDraft) {
+    setBandForm({
+      id: null,
+      kind: 'custom',
+      values: {
+        name: '',
+        startsAt: draft?.startsAt ?? '18:00',
+        endsAt: draft?.endsAt ?? '21:00',
+        // A band drawn on a Tuesday is a Tuesday band until more days are
+        // ticked. Guessing Mon-Fri from one gesture has to be undone.
+        weekdays: draft ? [draft.weekday] : [],
+      },
+    });
+  }
+
+  function saveBand(values: BandFormValues): Promise<SaveResult> {
+    const editing = bandForm?.id ?? null;
+    return new Promise((resolve) => {
+      startTransition(async () => {
+        resolve(editing ? await props.updateBand(editing, values) : await props.createBand(values));
+      });
+    });
+  }
+
+  function deleteBand(): Promise<SaveResult> {
+    const editing = bandForm?.id;
+    if (!editing) return Promise.resolve({ ok: true });
+    return new Promise((resolve) => {
+      startTransition(async () => {
+        const result = await props.removeBand(editing);
+        // A deleted band cannot stay zoomed. Nothing inside it moved — the
+        // frame is all that went.
+        if (result.ok && bandId === editing) setBandId(null);
+        resolve(result);
+      });
+    });
+  }
+
   function onCreate(input: OneOffInput) {
     startTransition(async () => {
       await props.addOneOff(input);
@@ -292,7 +365,7 @@ export function Calendar(props: CalendarProps) {
         <span className="md:hidden">{dayTitle(cursor)}</span>
         <span className="hidden md:inline">{weekTitle(week)}</span>
       </>
-    ) : view === 'day' ? (
+    ) : view === 'day' || view === 'full' ? (
       dayTitle(cursor)
     ) : view === 'month' ? (
       monthTitle(cursor)
@@ -320,6 +393,12 @@ export function Calendar(props: CalendarProps) {
               Timetable
             </Link>
             <Link
+              href="/bands"
+              className="text-13 text-muted underline-offset-4 hover:text-ink hover:underline"
+            >
+              Bands
+            </Link>
+            <Link
               href="/courses"
               className="text-13 text-muted underline-offset-4 hover:text-ink hover:underline"
             >
@@ -343,13 +422,21 @@ export function Calendar(props: CalendarProps) {
 
       <CalendarToolbar
         view={view}
-        onView={setView}
+        onView={(next) => {
+          // Leaving the 24-hour view closes whatever was zoomed inside it.
+          if (next !== 'full') setBandId(null);
+          setView(next);
+        }}
         onStep={step}
         onToday={() => setCursor(today)}
-        onAdd={() => setAdding(true)}
+        onAdd={() => (view === 'full' ? openNewBand() : setAdding(true))}
+        addLabel={view === 'full' ? 'New band' : 'Add class'}
       />
 
-      {nothingYet ? (
+      {/* The 24-hour view has something to say with no lectures at all: the
+          empty hours are its content, and bands live there whether or not the
+          term has been expanded. Every other view gets the empty state. */}
+      {nothingYet && view !== 'full' ? (
         <div className="rounded-card border border-border bg-surface">
           <EmptyState
             title="No lectures yet"
@@ -414,6 +501,37 @@ export function Calendar(props: CalendarProps) {
             </div>
           ) : null}
 
+          {view === 'full' ? (
+            zoomed ? (
+              <BandZoom
+                band={zoomed}
+                date={cursor}
+                today={today}
+                timeZone={timeZone}
+                meetings={meetingsByDate.get(cursor) ?? []}
+                now={now}
+                onClose={() => setBandId(null)}
+                onOpenMeeting={(meeting) => setOpenId(meeting.id)}
+                editHref={zoomed.kind === 'university' ? '/timetable' : `/bands/${zoomed.id}`}
+              />
+            ) : (
+              <FullDayView
+                date={cursor}
+                weekDates={week}
+                today={today}
+                timeZone={timeZone}
+                bands={props.bands}
+                meetingsByDate={meetingsByDate}
+                deadlinesByDate={deadlinesByDate}
+                now={now}
+                onSelect={setCursor}
+                onOpenBand={setBandId}
+                onOpenMeeting={(meeting) => setOpenId(meeting.id)}
+                onDraft={openNewBand}
+              />
+            )
+          ) : null}
+
           {view === 'month' ? (
             <MonthView
               anchor={cursor}
@@ -435,6 +553,17 @@ export function Calendar(props: CalendarProps) {
         busy={pending}
         onClose={() => setOpenId(null)}
         onSetCancelled={onSetCancelled}
+      />
+
+      <BandSheet
+        // A fresh form per band, exactly as the timetable's class sheet does:
+        // carrying the last band's times into the next one is a bug.
+        key={bandForm ? (bandForm.id ?? 'new') : 'closed'}
+        open={bandForm}
+        busy={pending}
+        onClose={() => setBandForm(null)}
+        onSave={saveBand}
+        onDelete={bandForm?.id ? deleteBand : undefined}
       />
 
       <AddClassSheet
