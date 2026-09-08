@@ -15,6 +15,7 @@ import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { Pill } from '@/components/ui/pill';
 import { bandRangeLabel, weekdaysLabel, type BandView } from '@/lib/bands';
+import { cx } from '@/lib/cx';
 import type { SaveResult } from '@/lib/timetable';
 
 type BandListProps = {
@@ -96,8 +97,18 @@ export function BandList({ bands, createBand, updateBand, removeBand }: BandList
       ) : (
         <Card className="divide-y divide-line">
           {bands.map((band) => (
-            <div key={band.id} className="flex items-center gap-3 px-4 py-3">
-              <Link href={`/bands/${band.id}`} className="min-w-0 flex-1">
+            <div
+              key={band.id}
+              className="flex items-center gap-3 px-4 py-3 transition-colors duration-(--duration-tap) hover:bg-sunken"
+            >
+              <Link
+                href={`/bands/${band.id}`}
+                className={cx(
+                  'min-w-0 flex-1 rounded-card transition-[translate] duration-(--duration-tap)',
+                  'active:translate-y-(--press-shift)',
+                  'focus-visible:outline-(length:--focus-ring-width) focus-visible:outline-offset-(--focus-ring-offset) focus-visible:outline-accent'
+                )}
+              >
                 <p className="flex min-w-0 items-center gap-2">
                   <span className="truncate text-14 font-medium">{band.name}</span>
                   {band.kind === 'university' ? <Pill>Timetable</Pill> : null}

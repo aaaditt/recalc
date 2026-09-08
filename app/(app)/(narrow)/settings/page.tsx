@@ -78,15 +78,34 @@ export default async function SettingsPage() {
             {index > 0 ? <CardDivider /> : null}
             <Link
               href={entry.href}
-              className="flex items-center gap-3 px-4 py-3 transition-colors duration-100 hover:bg-sunken"
+              className={[
+                'group flex items-center gap-3 px-4 py-3',
+                'transition-[background-color,translate] duration-(--duration-tap)',
+                'hover:bg-sunken active:translate-y-(--press-shift)',
+                'focus-visible:outline-(length:--focus-ring-width) focus-visible:-outline-offset-2 focus-visible:outline-accent',
+              ].join(' ')}
             >
               <span className="min-w-0 flex-1">
                 <span className="block text-14 font-medium">{entry.title}</span>
                 <span className="block text-12 text-muted">{entry.detail}</span>
               </span>
-              <span aria-hidden className="shrink-0 text-14 text-faint">
-                →
-              </span>
+              {/* A chevron, not a text arrow: this is a row affordance saying
+                  "there is more through here", not a sentence with an arrow
+                  stuck on the end of it. */}
+              <svg
+                viewBox="0 0 20 20"
+                width="16"
+                height="16"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+                className="shrink-0 text-faint transition-colors duration-(--duration-tap) group-hover:text-muted"
+              >
+                <path d="M8 4.5 13.5 10 8 15.5" />
+              </svg>
             </Link>
           </div>
         ))}

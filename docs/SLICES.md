@@ -317,6 +317,38 @@ omitted columns, so the shape of the row does not give the level away.
 `band_slots` already carries `workspace_id` so that policy is one join and not
 four; see `docs/SCHEMA.md`.
 
+## Slice 26 — the nav, and the craft pass
+
+Built. Not a feature: the thing that made the features findable.
+
+The report was "there is no friends tab on the left" and "it feels very basic,
+everything needs to be organized properly", and those turned out to be one
+problem. The nav had six flat slots from slice 13 in an app that had grown to
+thirteen destinations, so Friends, Bands, Courses, Timetable, Focus, Questions
+and Inbox were each reached by a 13px text link buried in some other screen's
+header. `docs/DECISIONS.md` complained about it six times and never fixed it,
+because every complaint was filed as "the nav is full at six" — treating the
+constraint as a fact rather than as the bug.
+
+It is three groups of four now — Day, Study, Semester — with Inbox and the
+account row below a hairline. A phone gets the four most-opened plus More, which
+is the same grouped list in a sheet, so there is no seventh-slot problem at any
+width and a new destination goes in a group rather than into a page header. The
+sidebar is sticky and one viewport tall, which it was not: it used to stretch to
+the height of the page beside it, so on a long screen you had to scroll the page
+to reach the navigation.
+
+The craft half is written up in `docs/DESIGN.md` under Chrome: three interaction
+states shared by every control (hover, a real 1px press, a focus ring), two
+elevation levels and no third, and no motion that runs without being asked. Two
+animations were written and deleted before they shipped — a settle-on-arrival
+and a pulsing now-line dot — because both play on their own, which is the
+opposite of principle 4.
+
+No migration, and no test: nothing here changed a rule, and the invariant suite
+(583) passes untouched. What proved it was opening the app in a browser, which
+is also how the sticky-sidebar bug was found.
+
 ## Stopping rule
 
 You can stop after any slice and still have a working app. If a slice is dragging

@@ -205,11 +205,67 @@ These are settled. Build to them rather than re-deriving.
 
 ## Chrome
 
-- Desktop sidebar: **216px**, `--surface`, 1px `--border` right, 18px/12px padding
+- Desktop sidebar: **216px**, `--surface`, 1px `--border` right, 18px/12px padding.
+  **Sticky, and exactly one viewport tall** — the list scrolls inside itself, so
+  the foot of the nav is reachable on a page of any length.
 - Top bar: **56px** high, 1px `--border` bottom
 - Mobile bottom nav: **62px** high, 1px `--border` top
+
+### The nav is grouped, not flat
+
+Slice 26. Six flat slots in an app with thirteen destinations meant seven of
+them were reached by a 13px text link inside some other screen's header, and
+`docs/DECISIONS.md` records six separate complaints about it. Groups, named for
+the question they answer:
+
+| Group | Holds | Answers |
+|---|---|---|
+| **Day** | Today, Calendar, Tasks, Focus | what am I doing between now and bedtime |
+| **Study** | Notes, Questions, Review, Search | the work, and what has gone out of date |
+| **Semester** | Courses, Timetable, Bands, Friends | the shape of the term, and who else is in it |
+
+Below them, separated by a hairline rather than a fourth label: **Inbox**, and
+the account row that leads to Settings. Neither is a place you go to work; they
+are the edges of the app.
+
+A phone gets the four most-opened — Today, Calendar, Tasks, Notes — and
+**More**, which is the same grouped list in a sheet. There is no seventh-slot
+problem at any width any more, and a new destination goes in a group rather than
+into somebody's page header.
+
+An item's **icon carries its state as much as its label does**: `--text` when
+you are there, `--text-faint` when you are not. A row that only changed its
+background read as a hover state that had got stuck.
 - Card radius **6px**, sheet radius **10px**, pills fully round
 - Buttons: **32px** high, 6px radius, 14px horizontal padding
+
+### Interaction — every control answers the pointer the same way
+
+Slice 26. Three states, and no more.
+
+| State | Treatment |
+|---|---|
+| Hover | the surface changes — `--sunken`, or 90% opacity on a filled button. 100ms |
+| Press | the control moves **1px down**. Not an opacity fade |
+| Focus | a **2px** `--accent` ring at **2px** offset, on `:focus-visible` only |
+
+Press is a real displacement because a button that moves under the finger reads
+as a button — and on a phone, where there is no hover at all, it is the only
+feedback between the tap and the response.
+
+### Elevation — two levels, and there is no third
+
+A card **sits on** the page: hairline, no shadow. A sheet or a menu has been
+**lifted off** it: `--shadow-float`. A card never gets a shadow to make it pop.
+
+### Motion
+
+Everything is ≤150ms, none of it is tied to scrolling, and **none of it runs
+without being asked**. A settle-on-arrival and a slow pulse on the now-line dot
+were both written during slice 26 and both deleted before they shipped: an
+animation that plays on its own is the opposite of principle 4. The two
+keyframes that exist, `rise` and `fade`, belong to the sheet, and they answer an
+action.
 
 ## Class blocks (all views)
 

@@ -42,10 +42,18 @@ export function BandBlock({
     <div
       className={cx(
         'flex h-full w-full flex-col gap-1 overflow-hidden rounded-card border text-left',
-        'px-3 py-2 transition-colors duration-100',
-        // "Quiet chrome, warm content." A band is chrome, so it is a hairline
-        // and a surface, and the one you are inside is a shade less quiet.
-        current ? 'border-border bg-sunken' : 'border-line bg-surface hover:bg-sunken'
+        'px-3 py-2 transition-colors duration-(--duration-tap)',
+        // A band is drawn as `--sunken` against the grid's `--surface`, so the
+        // part of the day that is spoken for reads as a region rather than as
+        // an empty card with a hairline round it. It is the same one step away
+        // from the page in both themes: sunken is darker than surface in light
+        // and lighter in dark, and in both it means "occupied".
+        //
+        // "Quiet chrome, warm content" — so the band you are currently inside
+        // gets a firmer edge and nothing else. No accent: being at university
+        // is not something that needs your attention.
+        'bg-sunken',
+        current ? 'border-border' : 'border-line hover:border-border'
       )}
     >
       <div className="flex min-w-0 items-baseline justify-between gap-2">
@@ -63,10 +71,15 @@ export function BandBlock({
         <>
           <p className="truncate text-12 text-muted">{summary}</p>
 
-          {/* Where the day's density sits, as a hairline rail. Marks are the
-              only colour on this screen and they are course colours. */}
+          {/* Where the day's density sits, as a hairline rail. The marks are
+              the only colour on this screen and they are course colours.
+
+              Directly under the summary, not pushed to the foot of the band: a
+              nine-hour band is 300px tall, and a rail floating at the bottom of
+              it reads as a separate object rather than as this band's own
+              density. */}
           {ticks.length > 0 ? (
-            <div className="relative mt-auto w-full" style={{ height: 'var(--band-tick-height)' }}>
+            <div className="relative mt-1 w-full" style={{ height: 'var(--band-tick-height)' }}>
               {ticks.map((tick) => (
                 <span
                   key={tick.key}

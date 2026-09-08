@@ -52,7 +52,9 @@ export default async function AppLayout({ children }: { children: ReactNode }) {
   const hint = found ? hintFor('shell', { staleCount }, found.dismissed) : null;
 
   return (
-    <div className="flex min-h-full flex-1">
+    // `items-start` so the sticky sidebar is free to be one viewport tall
+    // rather than being stretched to the height of the page beside it.
+    <div className="flex min-h-full flex-1 items-start">
       <AppNav staleCount={staleCount} username={profile?.username ?? null} />
 
       <main className="min-w-0 flex-1 px-4 pt-6 pb-(--content-pad-bottom) md:px-8 md:pt-8 md:pb-12">

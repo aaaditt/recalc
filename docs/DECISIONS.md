@@ -3721,3 +3721,76 @@ type per weekday checked against an array column. The rule is what lets
   silently — nothing on the Saturday view says "you were reading Evening".
 - **`/bands` is the ninth screen reached by a link rather than a nav destination.**
   Sixth entry in this file about the nav being full at six.
+
+
+---
+
+# Slice 26 — the nav, and the craft pass
+
+## The nav was the bug, not the polish
+
+Aadit's report was "there is no friends tab on the left" and "it feels very
+basic ... everything needs to be organized properly". Those are one problem.
+The nav had six flat slots (slice 13) in an app that had grown to thirteen
+destinations, so Friends, Bands, Courses, Timetable, Focus, Questions and Inbox
+were each reached by a 13px text link buried in some other screen's header.
+
+**This file complained about it six times and never fixed it**, because each
+complaint was filed as "the nav is full at six" — a constraint to work around
+rather than a decision to revisit. The constraint was the bug. Three groups of
+four have room for everything and room to grow.
+
+## The phone gets four and a More sheet
+
+Six columns at 390px was 65px each and already at the floor. Four plus More is
+78px each, and More is the same grouped list in a sheet, so there is no
+seventh-slot problem at any width. This is the entry that closes the other six.
+
+## The sidebar is sticky and one viewport tall
+
+It was stretched to the height of the page beside it, so on /today with a week
+of deadlines the foot of the nav — Inbox, and the account row that is the only
+way to Settings on a laptop — sat below the fold. You had to scroll the *page*
+to find the *navigation*. Caught by looking at it in a browser, not by reading
+it.
+
+## Two animations were written and deleted before shipping
+
+A `settle` on arrival and a slow pulse on the now-line dot. Both are ordinary,
+both would have looked fine in a screenshot, and both are motion that plays
+without being asked — the opposite of principle 4, on the screen this app says
+is the most-looked-at. The motion budget went into hover, press and focus
+instead, every one of which answers something the user just did. Recorded here
+because the next session will be tempted by exactly the same two.
+
+## A band is `--sunken`, not `--surface`
+
+Slice 25 drew a band as a surface with a hairline, which against the grid's own
+surface made a nine-hour band read as an empty card rather than as a region of
+the day that is spoken for. Sunken is one step from the page in both themes —
+darker in light, lighter in dark — and in both it means "occupied". The tick
+rail moved out from under `mt-auto` at the same time: at the foot of a 300px
+container it read as a separate object rather than as that band's density.
+
+## Noticed, not fixed
+
+- **`/today` still has its own Settings link.** It was the only route to Settings
+  on a phone before More existed. It is now the second, and one of them should
+  go — probably that one.
+- **The phone layout was not visually verified.** The window would not resize in
+  the harness. It is pure CSS that compiles (`md:hidden`, `grid-cols-5`) and the
+  desktop path is proved, but nobody has looked at More on a real 390px screen.
+- **`EmptyState` is used both inside a `Card` and bare**, so its padding does two
+  different jobs depending on the caller. It looks right in both today; it is
+  one component doing two things.
+- **There is no shared component for "a row in a card that goes somewhere",**
+  and there are now four of them (settings, bands, courses, notes) with the same
+  hover/press/focus classes copied into each. A `CardRow` was written during this
+  slice and deleted before it shipped, because every one of those rows has a
+  trailing control that an `<a>` cannot legally contain — the component needs a
+  slot for that, which is a real design and not a five-line wrapper.
+- **Nothing in the app has a loading state.** Every screen is server-rendered and
+  instant, which is the design — but a server action that takes a second (a band
+  save against a database ~600ms away) only disables its button. A pressed
+  button that goes quiet for a second is the one place the app still feels
+  unfinished, and it is the obvious next craft pass.

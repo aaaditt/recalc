@@ -274,11 +274,41 @@
   --radius-card: 6px;
   --radius-sheet: 10px;
 
-  /* One shadow, for things that genuinely float. Hairlines everywhere else. */
+  /* One shadow, for things that genuinely float. Hairlines everywhere else.
+     Slice 26: "genuinely float" means a sheet, a menu, or a block being
+     dragged — something the user has lifted off the page. A card that merely
+     sits there gets a hairline. Two levels, and no third. */
   --shadow-float: var(--shadow);
 }
 
-/* Motion. Everything is <=150ms and none of it is tied to scrolling. */
+/* Interaction -------------------------------------------------------------
+   Slice 26. Every control in this app answers the pointer the same way, so
+   the app feels like one thing rather than a set of screens that each decided
+   for themselves.
+
+   Three states and no more: hover lifts the surface, press flattens it, focus
+   draws a ring. The press is a real 1px displacement rather than an opacity
+   change, because a button that moves under the finger reads as a button. */
+@theme {
+  --duration-tap: 100ms;
+  --duration-panel: 150ms;
+  --press-shift: 1px;
+  --focus-ring-width: 2px;
+  --focus-ring-offset: 2px;
+}
+
+/* Motion. Everything is <=150ms and none of it is tied to scrolling.
+ *
+ * Slice 26 added none, on purpose, and that was the second decision — the first
+ * was a settle-on-arrival and a slow pulse on the now-line dot, both written and
+ * both deleted before they shipped. An animation that runs without being asked
+ * is the opposite of principle 4, and DESIGN.md caps motion at 150ms precisely
+ * so this screen never gets busy. The motion budget went into the three states
+ * above instead, every one of which answers something the user just did.
+ *
+ * There is no scroll-triggered reveal anywhere in this app and there should not
+ * be one: docs/DESIGN.md, "none of it tied to scrolling".
+ */
 @theme {
   --animate-rise: rise 120ms ease-out;
   --animate-fade: fade 120ms ease-out;

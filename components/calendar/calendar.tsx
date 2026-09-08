@@ -379,46 +379,12 @@ export function Calendar(props: CalendarProps) {
 
   return (
     <>
-      <PageHeader
-        title="Calendar"
-        subtitle={subtitle}
-        actions={
-          <>
-            {/* The bottom nav is full at five columns (docs/DECISIONS.md), so
-                /courses is reached from here, exactly as /settings/semester is. */}
-            <Link
-              href="/timetable"
-              className="text-13 text-muted underline-offset-4 hover:text-ink hover:underline"
-            >
-              Timetable
-            </Link>
-            <Link
-              href="/bands"
-              className="text-13 text-muted underline-offset-4 hover:text-ink hover:underline"
-            >
-              Bands
-            </Link>
-            <Link
-              href="/courses"
-              className="text-13 text-muted underline-offset-4 hover:text-ink hover:underline"
-            >
-              Courses
-            </Link>
-            <Link
-              href="/settings/semester"
-              className="text-13 text-muted underline-offset-4 hover:text-ink hover:underline"
-            >
-              Semester
-            </Link>
-            <Link
-              href="/settings/drive"
-              className="text-13 text-muted underline-offset-4 hover:text-ink hover:underline"
-            >
-              Drive
-            </Link>
-          </>
-        }
-      />
+      {/* Slice 26: this header used to carry five 13px text links — Timetable,
+          Courses, Bands, Semester, Drive — because the nav was full at six and
+          there was nowhere else to put them (docs/DECISIONS.md, six separate
+          entries). The nav holds all five now, so the most-looked-at screen in
+          the app opens with a heading rather than a menu bar. */}
+      <PageHeader title="Calendar" subtitle={subtitle} />
 
       <CalendarToolbar
         view={view}
