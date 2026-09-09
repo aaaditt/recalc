@@ -141,8 +141,45 @@ export function dateRangeUtc(
   };
 }
 
-/** The timezone this machine is set to. The default for a single-user app. */
+/** True if `zone` is an IANA name this runtime can actually format in. */
+function knownZone(zone: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-GB', { timeZone: zone });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The timezone the app reads the clock in.
+ *
+ * `NEXT_PUBLIC_APP_TIME_ZONE` first, and it is the answer in production.
+ *
+ * This used to be the machine's zone alone, with the comment "the default for
+ * a single-user app" — true for as long as the only machine was a laptop in
+ * Dubai. Every page that asks the question is a Server Component, so the
+ * machine became a serverless container the day this deployed, and a container
+ * runs in UTC. `todayIn` rolled over at 4am and a 07:30 first period drew at
+ * 03:30: the whole timetable four hours early, on every screen at once.
+ *
+ * The periods are campus wall-clock times — "07:30" is a room with people in
+ * it, not an instant — so the right zone is the campus's, not the reader's.
+ * That makes a fixed name correct here rather than merely convenient, and it
+ * keeps a phone that is actually abroad reading the timetable it turns up for.
+ *
+ * Named `NEXT_PUBLIC_APP_TIME_ZONE` for two reasons: Vercel reserves `TZ` and
+ * refuses to store it, and `lib/time.ts` reaches the browser bundle, so a
+ * server-only name would be undefined in exactly the place a client component
+ * would silently fall back to the reader's own zone.
+ *
+ * A misspelt zone falls back instead of throwing. `Intl` throws on an unknown
+ * name, and this is called at the top of nearly every page — a typo in a
+ * dashboard field should not be a site-wide 500.
+ */
 export function localTimeZone(): string {
+  const configured = process.env.NEXT_PUBLIC_APP_TIME_ZONE?.trim();
+  if (configured && knownZone(configured)) return configured;
   return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 }
 

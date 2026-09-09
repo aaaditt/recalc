@@ -3855,3 +3855,43 @@ handler is reachable unauthenticated by default and **must** do its own check.
   written down that the flag is expected. Now it is.
 - **Leaked-password protection is off** in Supabase Auth. Slice 24 added a
   password; HaveIBeenPwned checking is a dashboard toggle nobody has flipped.
+
+## 2026-09-09 — The campus timezone is configuration, not the machine's clock
+Because: the first production deploy drew the entire timetable four hours early.
+`localTimeZone()` was `Intl.DateTimeFormat().resolvedOptions().timeZone`, with
+the comment "the timezone this machine is set to. The default for a single-user
+app" — correct for as long as the only machine was a laptop in Dubai. Every page
+that asks is a Server Component, so on Vercel the machine is a container running
+in UTC. A 07:30 first period rendered at 03:30, `todayIn` rolled the day over at
+4am, and `/today`, `/calendar`, `/timetable` and `/tasks` were wrong together.
+
+Nothing in the database was wrong — 9 periods at 07:30–15:40 and 19 sessions all
+matching their period exactly, verified before a line was changed. It was purely
+a reading of the clock, which is why it looked like data loss and was not.
+
+The zone is now `NEXT_PUBLIC_APP_TIME_ZONE`, set to `Asia/Dubai`.
+
+- **A fixed zone, not the reader's.** Periods are campus wall-clock times —
+  "07:30" is a room with people in it, not an instant — so the timetable should
+  read the same on a phone in another country. The reader's zone would be the
+  wrong answer, not merely a different one.
+- **`NEXT_PUBLIC_`, not a server-only name.** `lib/time.ts` reaches the browser
+  bundle. A server-only variable would be `undefined` there, and a client
+  component calling it would silently fall back to the reader's zone — the same
+  bug, harder to see. A timezone name is not a secret.
+- **Not `TZ`.** Vercel reserves the name and the API refuses to store it. That is
+  the only reason this is app-level configuration rather than one env var.
+- **Read via `process.env` directly, not through `lib/env.ts`.** That module
+  throws when the Supabase variables are absent, and `lib/time.test.ts` is pure
+  and must run without them. Coupling the clock to the database's env would make
+  a timezone test need a database.
+- **A misspelt zone falls back instead of throwing.** `Intl` throws on an unknown
+  name and this is called at the top of nearly every page; a typo in a dashboard
+  field must not be a site-wide 500.
+
+Instead of: `TZ` (reserved), or storing the zone per user (a migration, a
+settings screen, and a second source of truth for a single-user app whose
+campus does not move).
+
+Revisit when: a second person in another country uses this. The zone then belongs
+on the workspace, and this variable becomes its default.

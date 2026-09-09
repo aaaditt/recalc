@@ -1,9 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import {
   dayRangeUtc,
   eachDate,
   localDateKey,
   localTimeLabel,
+  localTimeZone,
   shiftDate,
   weekdayOf,
   zonedToUtc,
@@ -80,5 +81,51 @@ describe('calendar dates', () => {
       '2026-10-08',
     ]);
     expect(eachDate('2026-10-08', '2026-10-06')).toEqual([]);
+  });
+});
+
+
+// The bug this guards against shipped, and could only ever appear in
+// production: every page that asks the time is a Server Component, so on
+// Vercel the "machine" is a container running in UTC, and the whole 07:30
+// timetable drew at 03:30. See lib/time.ts's note on localTimeZone.
+describe('localTimeZone', () => {
+  const original = process.env.NEXT_PUBLIC_APP_TIME_ZONE;
+
+  afterEach(() => {
+    if (original === undefined) delete process.env.NEXT_PUBLIC_APP_TIME_ZONE;
+    else process.env.NEXT_PUBLIC_APP_TIME_ZONE = original;
+  });
+
+  it('prefers the configured campus zone over the machine', () => {
+    process.env.NEXT_PUBLIC_APP_TIME_ZONE = 'Asia/Dubai';
+    expect(localTimeZone()).toBe('Asia/Dubai');
+  });
+
+  it('keeps the campus zone even when the machine is UTC, which is Vercel', () => {
+    process.env.NEXT_PUBLIC_APP_TIME_ZONE = 'Asia/Dubai';
+    // The first period, as an instant: 07:30 in Dubai is 03:30Z.
+    const firstPeriod = new Date('2026-09-09T03:30:00Z');
+    expect(localTimeLabel(firstPeriod, localTimeZone())).toBe('07:30');
+  });
+
+  it('falls back to the machine when unset', () => {
+    delete process.env.NEXT_PUBLIC_APP_TIME_ZONE;
+    expect(localTimeZone()).toBe(
+      Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+    );
+  });
+
+  it('falls back rather than throwing on a misspelt zone', () => {
+    process.env.NEXT_PUBLIC_APP_TIME_ZONE = 'Asia/Dubai_typo';
+    expect(() => localTimeZone()).not.toThrow();
+    expect(localTimeZone()).not.toBe('Asia/Dubai_typo');
+  });
+
+  it('ignores an empty value, which is what an unfilled dashboard field sends', () => {
+    process.env.NEXT_PUBLIC_APP_TIME_ZONE = '   ';
+    expect(localTimeZone()).toBe(
+      Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+    );
   });
 });
