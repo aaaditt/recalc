@@ -3895,3 +3895,32 @@ campus does not move).
 
 Revisit when: a second person in another country uses this. The zone then belongs
 on the workspace, and this variable becomes its default.
+
+## 2026-09-09 — Five accounts deleted, and the database now holds one person
+Because: tracing the four-hour timetable bug turned up six accounts in a
+single-user app. One was `work.aadit@gmail.com`, a second account of Aadit's
+carrying its own workspace and a full set of nine periods and no courses. Four
+were `probe-step7-*@example.com`, created a minute apart on 2026-09-07 by the
+slice 20 onboarding work and never cleaned up. Aadit asked for all five to go.
+
+Deleted through `auth.users`, which is the only safe handle: every foreign key
+that reaches a user or a workspace is `on delete cascade` — checked before
+running, not assumed — so one delete took the five users, their five workspaces,
+and `work.aadit`'s nine orphan periods and one band with them.
+
+Checked first, because a delete cannot be checked afterwards: no `friendships`
+rows touched any of them (the table is empty), no `google_accounts`, no
+`agent_profiles`. The statement carried `and id <> '20450fae-…'` as a second
+guard so a mistyped id could not take the real account.
+
+After: 1 user, 1 workspace, 9 periods, 1 band, 5 courses, 19 sessions, 2 blocks,
+0 orphaned rows.
+
+A side effect worth naming: `periods` held 18 rows and now holds 9. Both sets
+were always correct and RLS kept them apart — the duplicates were `work.aadit`'s
+own nine, never visible to Aadit — but anyone reading the table directly, as this
+session did, met eighteen rows and had to work out why. That is now gone.
+
+This closes two items from the deploy's "Noticed, not fixed" list. The remaining
+three — the Google placeholders, `private.trip_invite_attempts`, and
+leaked-password protection — still stand.
