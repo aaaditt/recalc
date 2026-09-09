@@ -106,6 +106,25 @@ export async function lookupByUsername(
   return repo.findByUsername(db, parsed.data);
 }
 
+/**
+ * The email address behind a username, for signing in. Null if nothing claims
+ * it, and null for a malformed name — the same answer, so the caller cannot
+ * read anything from the shape of the rejection.
+ *
+ * `db` must be the service-role client; migration 020 grants the underlying
+ * function to `service_role` and to nothing else. The login action is the only
+ * caller, and it hands the address straight back to Supabase without it ever
+ * reaching a page.
+ */
+export async function emailForUsername(
+  db: SupabaseClient,
+  rawUsername: string
+): Promise<string | null> {
+  const parsed = usernameSchema.safeParse(rawUsername);
+  if (!parsed.success) return null;
+  return repo.emailForUsername(db, parsed.data);
+}
+
 /** Whether a username could be claimed at all, before asking the database. */
 export function isValidUsername(raw: string): boolean {
   return usernameSchema.safeParse(raw).success;

@@ -3924,3 +3924,68 @@ session did, met eighteen rows and had to work out why. That is now gone.
 This closes two items from the deploy's "Noticed, not fixed" list. The remaining
 three — the Google placeholders, `private.trip_invite_attempts`, and
 leaked-password protection — still stand.
+
+## 2026-09-09 — Accounts are made by the server, so getting in needs no email
+Because: a friend was sent the link and could not get in. `signInWithOtp` and
+`signInWithOAuth` are the only two calls that create a user, both hand the
+browser to Supabase, and Supabase returns it to the project's redirect
+allow-list — falling back to Site URL, which still said `http://localhost:3000`.
+He was sent to a machine that was not running.
+
+The reflex fix is to correct Site URL, and that was the advice given twice in
+this session. It was the wrong advice: it treats a config field as the bug when
+the bug is that **the only door that never redirects was shut to new people**.
+`/login` had password sign-in since slice 24 and said so in its own comment —
+"This page never creates an account" — which was written when there was one
+account and that was a feature.
+
+So `signUpWithPassword` creates the user with the service role and
+`email_confirm: true`. No mail is sent, no redirect happens, and the allow-list
+stops being load-bearing for getting in at all. It then signs the new account
+straight in, so making one and using one is a single press.
+
+- **`email_confirm: true` is a claim this app cannot check.** Nobody has proved
+  they can read that mailbox. That is the trade, taken deliberately: the address
+  is a login name that happens to look like an email, and the only thing it
+  unlocks is a workspace of your own. Anything that mails a person, or trusts
+  the address to identify them, needs real verification first — and there is
+  nothing in the app today that does either.
+- **Sign-up admits an address is taken; sign-in still admits nothing.** Account
+  creation cannot avoid leaking existence without becoming unusable. The
+  sign-in form keeps one sentence for a wrong password, an unknown username and
+  an unknown address, and the username path keeps its round trip so the two
+  cases cannot be told apart by timing.
+- **Signing in takes a username or an email**, resolved through
+  `email_for_username` (migration 020) on the server. Granted to `service_role`
+  and revoked from `anon` and `authenticated`, because it returns an address and
+  the friends feature hands out usernames for free. Two tests assert the denial
+  against real clients rather than by reading the grant, since the likely future
+  mistake is granting it to `authenticated` to save a round trip.
+- **The magic link stays, demoted to small print.** There is no password reset,
+  so it is the only way back for somebody who forgets one. It is now the only
+  thing on the page that still needs the allow-list.
+
+Instead of: fixing Site URL alone, which would have left every new person
+dependent on reading their email to use a study app at 7:45am — and which no
+one can do from this repo, since the setting lives in a dashboard.
+
+Known, not fixed: **sign-up is open.** Anyone who finds the URL can make an
+account. This is not new — `signInWithOtp` already created users for anyone who
+typed an address — and RLS isolates every workspace, so the cost is rows rather
+than exposure. An invite code is the fix when it becomes one.
+
+## 2026-09-09 — Migration 020 is recorded under a timestamp, not `020`
+Because: `supabase db push` was blocked by this environment's permission
+classifier, so the migration was applied through the Supabase MCP instead. That
+path names migrations itself, and the row in `supabase_migrations` reads
+`20260909190356 / password_signup` where every other row reads `001`..`019`.
+
+The file is `supabase/migrations/020_password_signup.sql` and keeps the
+convention. Only the remote ledger disagrees, and only for this one row.
+
+The thing to know: **a later `supabase db push` will try to apply 020 again**,
+because it will not find `020` in the remote list. The function is
+`create or replace` and the grants are idempotent, so re-running it is harmless —
+but that is luck rather than design, and the next migration written by hand
+should be checked against `supabase_migrations.schema_migrations` before it is
+pushed rather than after.

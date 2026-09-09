@@ -1266,6 +1266,7 @@ export type Database = {
         Args: { p_workspace_id: string }
         Returns: number
       }
+      email_for_username: { Args: { p_username: string }; Returns: string }
       find_profile_by_username: {
         Args: { p_username: string }
         Returns: {

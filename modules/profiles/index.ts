@@ -11,6 +11,7 @@
 // would make every account on the app enumerable.
 export {
   claimUsername,
+  emailForUsername,
   getDismissedNotices,
   getProfile,
   hasDismissed,

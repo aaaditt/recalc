@@ -92,6 +92,36 @@ export async function findByUsername(
 }
 
 /**
+ * The email address behind a username, or null if nothing claims it.
+ *
+ * Slice 27. `signInWithPassword` takes an email and Supabase has no username
+ * variant, so "aadit + password" has to become an address somewhere, and this
+ * is that somewhere.
+ *
+ * **`db` must be the service-role client.** `email_for_username` is granted to
+ * `service_role` alone — migration 020 revokes it from `anon` and from
+ * `authenticated` — so calling this with a request-scoped client is a
+ * permission error, not a quiet null. That is deliberate: the address must
+ * never be reachable from a browser, and the grant is what enforces it rather
+ * than a promise made in a comment.
+ *
+ * The caller is a server action that passes the result straight to Supabase.
+ * Nothing returns it to a page.
+ */
+export async function emailForUsername(
+  db: SupabaseClient,
+  username: string
+): Promise<string | null> {
+  const { data, error } = await db.rpc('email_for_username', {
+    p_username: username,
+  });
+  if (error) throw new Error(`profiles.emailForUsername: ${error.message}`);
+
+  // `returns text`, so this is the address or null — not a row and not an array.
+  return typeof data === 'string' && data.length > 0 ? data : null;
+}
+
+/**
  * Write the whole notices map back.
  *
  * The map is read, changed and written rather than updated in place with a

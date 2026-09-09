@@ -30,6 +30,7 @@ column as you go — this is how a fresh session knows where we are.
 | 22 | Friends — requests, accept/decline, per-friend visibility | done |
 | 23 | Compare — one friend's free/busy or detail, beside yours | done |
 | 24 | **Account** — a password, a sign-out, and a settings page that exists | done |
+| 27 | **A way in** — sign up with a password, sign in with a username | done |
 | ?? | All-day timetable — a 12am–12am day holding named blocks | **not designed** |
 
 Slice 20's design is at
@@ -353,3 +354,24 @@ is also how the sticky-sidebar bug was found.
 
 You can stop after any slice and still have a working app. If a slice is dragging
 past a session, split it and record the split here rather than pushing through.
+
+Slice 27 was not planned either, and like slice 24 it was found by someone using
+the app rather than by reading it. Aadit sent a friend a link. The friend had no
+account, and the only two calls that could make him one — `signInWithOtp` and
+`signInWithOAuth` — both hand the browser to Supabase, which returns it to the
+project's redirect allow-list and falls back to Site URL when nothing matches.
+Site URL still said `http://localhost:3000`, so the friend was sent to a machine
+that was not running.
+
+The third door, a password, never redirects anywhere and had worked since slice
+24. `/login` simply refused to open it for anybody new — its own comment said
+"This page never creates an account", written when there was exactly one account
+and that was a feature.
+
+So the fix is not the allow-list. Accounts are now made server-side with the
+service role and `email_confirm: true`, which sends no mail and performs no
+redirect, and signing in accepts a username as well as an address. Nothing about
+getting in depends on the allow-list any more. The magic link is still there, at
+the bottom of the page in small print, because there is no password reset and it
+is the only way back for somebody who forgets one — and it is now the only thing
+on that page that still needs the allow-list to be right.
